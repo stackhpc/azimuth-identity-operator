@@ -1,0 +1,14 @@
+apiVersion: v1
+entries:
+  azimuth-identity-operator:
+  - apiVersion: v2
+    appVersion: ae1c80b
+    created: "2022-12-05T11:21:20.168927287Z"
+    description: Helm chart for deploying the Azimuth identity operator.
+    digest: 985ea98eeddb6bc873fbd367f5f805392f3f618f71739e22b317f67fcb5f356b
+    name: azimuth-identity-operator
+    type: application
+    urls:
+    - azimuth-identity-operator-0.1.0-dev.0.main.1.tgz
+    version: 0.1.0-dev.0.main.1
+generated: "2022-12-05T11:21:20.168167187Z"

@@ -1,0 +1,47 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "azimuth-identity-operator.fullname" . }}
+  labels: {{ include "azimuth-identity-operator.labels" . | nindent 4 }}
+spec:
+  # Allow only one replica at once with the recreate strategy in order to avoid races
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels: {{ include "azimuth-identity-operator.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels: {{ include "azimuth-identity-operator.selectorLabels" . | nindent 8 }}
+      annotations:
+        # Force the deployment to roll when the config changes
+        azimuth.stackhpc.com/config-hash: {{ include (print $.Template.BasePath "/secret.yaml") . | sha256sum }}
+    spec:
+      serviceAccountName: {{ include "azimuth-identity-operator.fullname" . }}
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets: {{ toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext: {{ toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: operator
+          securityContext: {{ toYaml .Values.securityContext | nindent 12 }}
+          image: {{ printf "%s:%s" .Values.image.repository (default .Chart.AppVersion .Values.image.tag) }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          resources: {{ toYaml .Values.resources | nindent 12 }}
+          volumeMounts:
+            - name: etc-azimuth
+              mountPath: /etc/azimuth
+              readOnly: true
+      {{- with .Values.nodeSelector }}
+      nodeSelector: {{ toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity: {{ toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations: {{ toYaml . | nindent 8 }}
+      {{- end }}
+      volumes:
+        - name: etc-azimuth
+          secret:
+            secretName: {{ include "azimuth-identity-operator.fullname" . }}

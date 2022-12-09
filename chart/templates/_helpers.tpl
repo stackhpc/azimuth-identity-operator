@@ -37,3 +37,18 @@ app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
 {{- end }}
 {{ include "azimuth-identity-operator.selectorLabels" . }}
 {{- end }}
+
+{{/*
+The TLS secret name to use for Dex instances.
+*/}}
+{{- define "azimuth-identity-operator.tlsSecretName" -}}
+{{- if .Values.tls.createCertificate }}
+{{- if .Values.tls.secretName }}
+{{- .Values.tls.secretName }}
+{{- else }}
+{{- include "azimuth-identity-operator.fullname" . | printf "%s-tls" }}
+{{- end }}
+{{- else }}
+{{- required "tls.secretName is required when tls.createCertificate is false" .Values.tls.secretName }}
+{{- end }}
+{{- end }}

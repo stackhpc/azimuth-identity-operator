@@ -1,0 +1,17 @@
+{{- if .Values.tls.createCertificate }}
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: azimuth-tls
+  labels:
+    app.kubernetes.io/instance: azimuth
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/name: azimuth
+    app.kubernetes.io/version: e70720f
+    helm.sh/chart: azimuth-0.1.0-dev.0.feature-external-identity.697
+spec:
+  dnsNames:
+    - {{ .Values.config | dig "dex" "host" "" | required "config.dex.host is required" }}
+  issuerRef: {{ .Values.tls.issuerRef | required "tls.issuerRef is required if tls.createCertificate is true" | toYaml | nindent 4 }}
+  secretName: {{ include "azimuth-identity-operator.tlsSecretName" . }}
+{{- end }}

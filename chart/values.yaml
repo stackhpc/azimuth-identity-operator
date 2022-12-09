@@ -1,3 +1,15 @@
+# The TLS configuration for Dex instances
+tls:
+  # Indicates whether to create a certificate object
+  createCertificate: true
+  # The name of the TLS secret to create
+  # If createCertificate = false, this MUST be set to an existing secret
+  # If createCertificate = true and this is empty, a name is derived from the release name
+  secretName:
+  # The issuer ref to use for the certificate
+  # Only used if createCertificate = true
+  issuerRef:
+
 # Configuration for the operator
 # For all available options, see azimuth_identity/config.py
 config: {}

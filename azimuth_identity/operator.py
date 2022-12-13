@@ -590,7 +590,9 @@ async def reconcile_realm(instance: api.Realm, **kwargs):
                 "checksum/config": conf_checksum,
             },
         },
-        namespace = instance.metadata.namespace
+        namespace = instance.metadata.namespace,
+        # The target namespace already exists, because the realm is in it
+        create_namespace = False
     )
     # Generate the ingresses for Dex
     await ensure_dex_ingresses(instance, tls_secret_name)

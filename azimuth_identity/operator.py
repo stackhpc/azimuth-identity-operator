@@ -235,6 +235,9 @@ async def ensure_dex_config_secret(realm: api.Realm, tls_enabled: bool):
             host = settings.dex.host,
             prefix = keycloak_realm_name(realm)
         ),
+        "oauth2": {
+            "skipApprovalScreen": True,
+        },
         "storage": {
             "type": "kubernetes",
             "config": {

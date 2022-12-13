@@ -1,5 +1,7 @@
 # The TLS configuration for Dex instances
 tls:
+  # Indicates whether TLS is enabled
+  enabled: true
   # Indicates whether to create a certificate object
   createCertificate: true
   # The name of the TLS secret to create

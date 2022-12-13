@@ -50,7 +50,7 @@ class DexConfig(Section):
     #: The alias to use for the Keycloak client
     keycloak_client_alias: constr(min_length = 1) = "azimuth"
     #: The number of bytes to use for the client secret
-    keycloak_client_secret_bytes: conint(gt = 0) = 32
+    keycloak_client_secret_bytes: conint(gt = 0) = 64
 
 
 class KeycloakConfig(Section):

@@ -2,13 +2,8 @@
 apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata:
-  name: azimuth-tls
-  labels:
-    app.kubernetes.io/instance: azimuth
-    app.kubernetes.io/managed-by: Helm
-    app.kubernetes.io/name: azimuth
-    app.kubernetes.io/version: e70720f
-    helm.sh/chart: azimuth-0.1.0-dev.0.feature-external-identity.697
+  name: {{ include "azimuth-identity-operator.fullname" . }}-tls
+  labels: {{ include "azimuth-identity-operator.labels" . | nindent 4 }}
 spec:
   dnsNames:
     - {{ .Values.config | dig "dex" "host" "" | required "config.dex.host is required" }}

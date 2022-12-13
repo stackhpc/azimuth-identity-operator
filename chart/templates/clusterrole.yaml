@@ -83,10 +83,10 @@ rules:
   - apiGroups:
       - rbac.authorization.k8s.io
     resources:
-      - role
-      - rolebinding
-      - clusterrole
-      - clusterrolebinding
+      - roles
+      - rolebindings
+      - clusterroles
+      - clusterrolebindings
     verbs:
       - "*"
   - apiGroups:

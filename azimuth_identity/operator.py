@@ -616,6 +616,7 @@ async def reconcile_realm(instance: api.Realm, **kwargs):
         await ensure_keycloak_identity_provider(kc_client, instance, dex_client)
     instance.status.phase = api.RealmPhase.READY
     instance.status.oidc_issuer_url = f"{settings.keycloak.base_url}/realms/{realm_name}"
+    instance.status.admin_url = f"{settings.keycloak.base_url}/admin/{realm_name}/console"
     await save_instance_status(instance)
 
 

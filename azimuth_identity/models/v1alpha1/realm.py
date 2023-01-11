@@ -40,6 +40,10 @@ class RealmStatus(schema.BaseModel):
         None,
         description = "The OIDC issuer URL for the realm."
     )
+    admin_url: t.Optional[AnyHttpUrl] = Field(
+        None,
+        description = "The admin URL for the realm."
+    )
     failure_message: str = Field(
         "",
         description = "The reason that the realm entered the failed phase, if known."

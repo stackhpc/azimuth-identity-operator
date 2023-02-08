@@ -68,6 +68,9 @@ class KeycloakConfig(Section):
     username: constr(min_length = 1)
     password: constr(min_length = 1)
 
+    #: Indicates if SSL is required for external requests
+    ssl_required: bool = True
+
     #: The default expiry for client registration tokens in seconds
     token_default_expiration: conint(gt = 0) = 3600
     #: The default number of clients that a client registration token is allowed to register

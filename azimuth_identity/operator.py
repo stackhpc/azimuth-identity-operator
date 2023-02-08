@@ -607,9 +607,13 @@ async def reconcile_realm(instance: api.Realm, **kwargs):
         response = await kc_client.get(f"/{realm_name}")
         response.raise_for_status()
         realm = response.json()
-        # Enable the realm if required
-        if not realm.get("enabled"):
-            realm["enabled"] = True
+        realm_original = realm.copy()
+        # Ensure the realm is enabled
+        realm["enabled"] = True
+        # Ensure that SSL is required or not as per the settings
+        realm["sslRequired"] = "external" if settings.keycloak.ssl_required else "none"
+        # Patch the realm if needed
+        if realm != realm_original:
             response = await kc_client.put(f"/{realm_name}", json = realm)
             response.raise_for_status()
         await ensure_keycloak_admins_group(kc_client, instance)

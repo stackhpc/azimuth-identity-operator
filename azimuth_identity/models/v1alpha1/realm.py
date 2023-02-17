@@ -19,10 +19,11 @@ class RealmPhase(str, schema.Enum):
     """
     The possible phases for a realm.
     """
-    UNKNOWN = "Unknown"
-    PENDING = "Pending"
-    READY   = "Ready"
-    FAILED  = "Failed"
+    UNKNOWN  = "Unknown"
+    PENDING  = "Pending"
+    READY    = "Ready"
+    DELETING = "Deleting"
+    FAILED   = "Failed"
 
 
 class RealmStatus(schema.BaseModel):

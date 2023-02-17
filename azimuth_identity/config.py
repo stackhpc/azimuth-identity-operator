@@ -30,6 +30,9 @@ class DexConfig(Section):
     #: The host to use for Dex instances
     #: The realm instances will be provisioned using subpaths on this host
     host: constr(min_length = 1)
+    #: The template for generating prefixes for Dex instances
+    #: This will have the Keycloak realm name and tenancy ID available to it
+    prefix_template: constr(min_length = 1) = "/authproxy/{tenancy_id}"
 
     #: The name of the secret containing the TLS secret for the host
     #: If it is given, Dex instances will have TLS enabled
@@ -71,10 +74,14 @@ class KeycloakConfig(Section):
     #: Indicates if SSL is required for external requests
     ssl_required: bool = True
 
-    #: The default expiry for client registration tokens in seconds
-    token_default_expiration: conint(gt = 0) = 3600
-    #: The default number of clients that a client registration token is allowed to register
-    token_default_client_count: conint(gt = 0) = 1
+    #: The scheme to use for Zenith redirect URIs
+    zenith_redirect_uri_scheme: t.Literal["http", "https"] = "https"
+    #: The path to use for Zenith redirect URIs
+    zenith_redirect_uri_path: constr(min_length = 1) = "/_oidc/callback"
+    #: The namespace to write Zenith discovery secrets into
+    zenith_discovery_namespace: constr(min_length = 1) = "zenith-services"
+    #: The template for generating the names of discovery secrets
+    zenith_discovery_secret_name_template: constr(min_length = 1) = "oidc-discovery-{subdomain}"
 
     #: The name to use for the admins group in each realm
     admins_group_name: constr(min_length = 1) = "admins"

@@ -20,7 +20,7 @@ rules:
       - customresourcedefinitions
     resourceNames:
       - realms.identity.azimuth.stackhpc.com
-      - clientregistrationtokens.identity.azimuth.stackhpc.com
+      - platforms.identity.azimuth.stackhpc.com
     verbs:
       - update
       - patch

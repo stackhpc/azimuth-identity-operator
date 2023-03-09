@@ -47,7 +47,7 @@ rules:
       - "*"
     verbs:
       - "*"
-  # We need to be able to manipulate secrets for tokens and Dex config
+  # We need to be able to manipulate secrets for tokens, Dex config + Zenith discovery
   - apiGroups:
       - ""
     resources:

@@ -22,7 +22,7 @@ class DexConfig(Section):
     #: The Helm chart repo, name and version to use for Dex instances
     chart_repo: AnyHttpUrl = "https://charts.dexidp.io"
     chart_name: constr(min_length = 1) = "dex"
-    chart_version: constr(min_length = 1) = "0.12.1"
+    chart_version: constr(min_length = 1) = "0.13.0"
 
     #: Default Helm values to merge with calculated values for Dex releases
     default_values: t.Dict[str, t.Any] = Field(default_factory = dict)
@@ -82,6 +82,13 @@ class KeycloakConfig(Section):
     zenith_discovery_namespace: constr(min_length = 1) = "zenith-services"
     #: The template for generating the names of discovery secrets
     zenith_discovery_secret_name_template: constr(min_length = 1) = "oidc-discovery-{subdomain}"
+
+    #: The alias of the first broker login flow that will be copied to make the flow
+    source_first_login_flow_alias: constr(min_length = 1) = "first broker login"
+    #: The alias of the target first login flow that will be copied to
+    target_first_login_flow_alias: constr(min_length = 1) = "azimuth first login"
+    #: The name of the review profile execution to disable
+    review_profile_execution_name: constr(min_length = 1) = "idp-review-profile"
 
     #: The name to use for the admins group in each realm
     admins_group_name: constr(min_length = 1) = "admins"

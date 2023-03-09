@@ -85,7 +85,7 @@ async def ensure_config_secret(
                 base_url = settings.keycloak.base_url,
                 realm = keycloak_realm_name,
                 alias = settings.dex.keycloak_client_alias
-            )
+            ),
         ],
         "id": "keycloak-oidc",
         "secret": client_secret,
@@ -112,7 +112,9 @@ async def ensure_config_secret(
                 "id": "azimuth",
                 "name": "Azimuth",
                 "config": {
+                    "userIdHeader": "X-Remote-User-Id",
                     "userHeader": "X-Remote-User",
+                    "emailHeader": "X-Remote-User-Email",
                     "groupHeader": "X-Remote-Group",
                 },
             },
@@ -216,8 +218,13 @@ async def ensure_ingresses(
         "nginx.ingress.kubernetes.io/auth-snippet": (
             f"proxy_set_header X-Auth-Tenancy-Id \"{realm.spec.tenancy_id}\";"
         ),
-        # Forward the X-Remote-{User,Group} headers from the auth response to the upstream
-        "nginx.ingress.kubernetes.io/auth-response-headers": "X-Remote-User,X-Remote-Group",
+        # Forward the X-Remote-{User-Id,User,User-Email,Group} headers from the auth response to the upstream
+        "nginx.ingress.kubernetes.io/auth-response-headers": ",".join([
+            "X-Remote-User-Id",
+            "X-Remote-User",
+            "X-Remote-User-Email",
+            "X-Remote-Group",
+        ])
     }
     if settings.dex.ingress_auth_signin_url:
         auth_annotations.update({

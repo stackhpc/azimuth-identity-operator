@@ -14,7 +14,13 @@ tls:
 
 # Configuration for the operator
 # For all available options, see azimuth_identity/config.py
-config: {}
+config:
+  dex:
+    defaultValues:
+      # Use a custom Dex image until https://github.com/dexidp/dex/pull/2851 is merged and released
+      image:
+        repository: ghcr.io/stackhpc/dex
+        tag: v2.35.3-stackhpc.1
 
 # The image to use for the operator
 image:

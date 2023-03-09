@@ -121,7 +121,7 @@ async def ensure_admins_group(kc_client, realm_name: str):
 
 async def ensure_identity_provider(kc_client, realm: api.Realm, realm_name, dex_client):
     """
-    Ensures that a Keycloak identity provider exists for the given realm.
+    Ensures that a Keycloak identity provider exists for Azimuth for the given realm.
     """
     idp_url = f"/{realm_name}/identity-provider/instances/{settings.dex.keycloak_client_alias}"
     # Get the existing IDP as a starting base
@@ -141,6 +141,12 @@ async def ensure_identity_provider(kc_client, realm: api.Realm, realm_name, dex_
         "enabled": True,
         "alias": settings.dex.keycloak_client_alias,
         "displayName": "Azimuth",
+        # Ensure that the IDP is using our first login flow
+        "firstBrokerLoginFlowAlias": await _ensure_idp_first_login_flow(
+            kc_client,
+            realm,
+            realm_name
+        ),
     })
     issuer = "{scheme}://{host}{prefix}".format(
         scheme = "https" if settings.dex.tls_secret else "http",
@@ -159,7 +165,7 @@ async def ensure_identity_provider(kc_client, realm: api.Realm, realm_name, dex_
         "clientId": dex_client["id"],
         "clientSecret": dex_client["secret"],
         "syncMode": "IMPORT",
-        "defaultScope": "openid profile email groups",
+        "defaultScope": "openid profile email groups federated:id",
     })
     # Update the identity provider in Keycloak if required
     if not existing_idp:
@@ -169,6 +175,54 @@ async def ensure_identity_provider(kc_client, realm: api.Realm, realm_name, dex_
         )
     elif existing_idp != next_idp:
         await kc_client.put(idp_url, json = next_idp)
+    # Ensure that the mappers are properly configured
+    await _ensure_idp_realm_admins_mapper(kc_client, realm, idp_url)
+    await _ensure_idp_federated_id_mapper(kc_client, realm, idp_url)
+
+
+async def _ensure_idp_first_login_flow(kc_client, realm: api.Realm, realm_name: str):
+    """
+    Ensures that the first login flow for the IDP exists and that the review profile
+    execution is disabled.
+    """
+    # First, try to find the review profile execution for the flow
+    executions_url = "/{}/authentication/flows/{}/executions".format(
+        realm_name,
+        settings.keycloak.target_first_login_flow_alias
+    )
+    try:
+        response = await kc_client.get(executions_url)
+    except httpx.HTTPStatusError as exc:
+        if exc.response.status_code != 404:
+            raise
+        # If the executions don't exist, we need to create the flow by copying the source flow
+        await kc_client.post(
+            "/{}/authentication/flows/{}/copy".format(
+                realm_name,
+                settings.keycloak.source_first_login_flow_alias
+            ),
+            json = {
+                "newName": settings.keycloak.target_first_login_flow_alias
+            }
+        )
+        return await _ensure_idp_first_login_flow(kc_client, realm, realm_name)
+    else:
+        existing_execution = next(
+            execution
+            for execution in response.json()
+            if execution["providerId"] == settings.keycloak.review_profile_execution_name
+        )
+    next_execution = copy.deepcopy(existing_execution)
+    next_execution["requirement"] = "DISABLED"
+    if existing_execution != next_execution:
+        await kc_client.put(executions_url, json = next_execution)
+    return settings.keycloak.target_first_login_flow_alias
+
+
+async def _ensure_idp_realm_admins_mapper(kc_client, realm: api.Realm, idp_url: str):
+    """
+    Ensures that the IDP has a mapper that puts users into the realm admins group.
+    """
     # Get the existing realm-admins mapper
     response = await kc_client.get(f"{idp_url}/mappers")
     try:
@@ -196,6 +250,42 @@ async def ensure_identity_provider(kc_client, realm: api.Realm, realm_name, dex_
         "syncMode": "FORCE",
         "are.claim.values.regex": "false",
         "group": f"/{settings.keycloak.admins_group_name}"
+    })
+    # Update the mapper in Keycloak if required
+    if not existing_mapper:
+        await kc_client.post(f"{idp_url}/mappers", json = next_mapper)
+    elif existing_mapper != next_mapper:
+        await kc_client.put(
+            f"{idp_url}/mappers/{existing_mapper['id']}",
+            json = next_mapper
+        )
+
+
+async def _ensure_idp_federated_id_mapper(kc_client, realm: api.Realm, idp_url: str):
+    """
+    Ensures that the IDP has a mapper that sets an attribute with the federated ID.
+    """
+    # Get the existing realm-admins mapper
+    response = await kc_client.get(f"{idp_url}/mappers")
+    try:
+        existing_mapper = next(
+            mapper
+            for mapper in response.json()
+            if mapper["name"] == "federated-id"
+        )
+    except StopIteration:
+        existing_mapper = {}
+    # Update with what the mapper should look like
+    next_mapper = copy.deepcopy(existing_mapper)
+    next_mapper.update({
+        "name": "federated-id",
+        "identityProviderAlias": settings.dex.keycloak_client_alias,
+        "identityProviderMapper": "oidc-user-attribute-idp-mapper",
+    })
+    next_mapper.setdefault("config", {}).update({
+        "claim": "federated_claims.user_id",
+        "user.attribute": "federated_id",
+        "syncMode": "FORCE",
     })
     # Update the mapper in Keycloak if required
     if not existing_mapper:

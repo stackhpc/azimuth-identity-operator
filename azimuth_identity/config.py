@@ -91,7 +91,11 @@ class KeycloakConfig(Section):
     review_profile_execution_name: constr(min_length = 1) = "idp-review-profile"
 
     #: The name to use for the admins group in each realm
+    #: Members of this group get realm admin permissions
     admins_group_name: constr(min_length = 1) = "admins"
+    #: The name to use for the platform users group in each realm
+    #: Members of this group get access to all the platforms deployed in a project
+    platform_users_group_name: constr(min_length = 1) = "platform-users"
     #: The client roles to ensure are present in the admins group
     #: The value is a mapping of client => list of roles for client
     admins_group_client_roles: t.Dict[str, t.List[str]] = Field(

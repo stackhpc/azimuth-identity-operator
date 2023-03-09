@@ -151,8 +151,9 @@ async def reconcile_realm(instance: api.Realm, **kwargs):
         # Patch the realm if needed
         if realm != realm_original:
             await kc_client.put(f"/{realm_name}", json = realm)
-        # Create and wire up the admins group
+        # Create and wire up the admins and platform users group
         await keycloak.ensure_admins_group(kc_client, realm_name)
+        await keycloak.ensure_platform_users_group(kc_client, realm_name)
         # Create and wire up the identity provider for Dex
         await keycloak.ensure_identity_provider(kc_client, instance, realm_name, dex_client)
         # Create the groups scope
@@ -263,8 +264,8 @@ async def reconcile_platform(instance: api.Platform, **kwargs):
                         "client-id": client["clientId"],
                         "client-secret": client["secret"],
                         "allowed-groups": json.dumps([
-                            # We allow the admins group
-                            f"/{settings.keycloak.admins_group_name}",
+                            # We allow the platform users group
+                            f"/{settings.keycloak.platform_users_group_name}",
                             # Allow the parent group for all services
                             group["path"],
                             # Allow users to be added to a subgroup for the specific service

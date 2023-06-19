@@ -70,6 +70,28 @@ def realm_name(realm: api.Realm):
         return f"{realm.metadata.namespace}-{realm.metadata.name}"
 
 
+async def ensure_realm(kc_client, realm_name: str):
+    """
+    Ensures that the specified Keycloak realm exists and is enabled.
+    """
+    # First, ensure that a realm with the given name exists
+    try:
+        await kc_client.post("/", json = { "realm": realm_name })
+    except httpx.HTTPStatusError as exc:
+        if exc.response.status_code != 409:
+            raise
+    response = await kc_client.get(f"/{realm_name}")
+    realm = response.json()
+    realm_original = realm.copy()
+    # Ensure the realm is enabled
+    realm["enabled"] = True
+    # Ensure that SSL is required or not as per the settings
+    realm["sslRequired"] = "external" if settings.keycloak.ssl_required else "none"
+    # Patch the realm if needed
+    if realm != realm_original:
+        await kc_client.put(f"/{realm_name}", json = realm)
+
+
 async def _ensure_group(kc_client, realm_name: str, group_name: str):
     """
     Ensures that the specified group exists in Keycloak.

@@ -135,22 +135,8 @@ async def reconcile_realm(instance: api.Realm, **kwargs):
     dex_client = await dex.ensure_realm_instance(ekclient, instance, realm_name)
     # Configure the Keycloak realm
     async with keycloak.admin_client() as kc_client:
-        # First, ensure that a realm with the given name exists
-        try:
-            await kc_client.post("/", json = { "realm": realm_name })
-        except httpx.HTTPStatusError as exc:
-            if exc.response.status_code != 409:
-                raise
-        response = await kc_client.get(f"/{realm_name}")
-        realm = response.json()
-        realm_original = realm.copy()
-        # Ensure the realm is enabled
-        realm["enabled"] = True
-        # Ensure that SSL is required or not as per the settings
-        realm["sslRequired"] = "external" if settings.keycloak.ssl_required else "none"
-        # Patch the realm if needed
-        if realm != realm_original:
-            await kc_client.put(f"/{realm_name}", json = realm)
+        # Create the realm
+        await keycloak.ensure_realm(kc_client, realm_name)
         # Create and wire up the admins and platform users group
         await keycloak.ensure_admins_group(kc_client, realm_name)
         await keycloak.ensure_platform_users_group(kc_client, realm_name)
@@ -186,16 +172,20 @@ async def delete_realm(instance: api.Realm, **kwargs):
                 raise
 
 
-@model_handler(api.Platform, kopf.on.create)
-@model_handler(api.Platform, kopf.on.update, field = "spec")
-@model_handler(api.Platform, kopf.on.resume)
-async def reconcile_platform(instance: api.Platform, **kwargs):
+@model_handler(api.Platform, kopf.on.create, param = "CREATE")
+@model_handler(api.Platform, kopf.on.update, field = "spec", param = "UPDATE")
+@model_handler(api.Platform, kopf.on.resume, param = "RESUME")
+async def reconcile_platform(instance: api.Platform, param, **kwargs):
     """
     Handles the reconciliation of a platform.
     """
     # Acknowledge the platform at the earliest opportunity
     if instance.status.phase == api.PlatformPhase.UNKNOWN:
         instance.status.phase = api.PlatformPhase.PENDING
+        await save_instance_status(instance)
+    # If the spec has changed, put the platform into the updating phase
+    if param == "UPDATE":
+        instance.status.phase = api.PlatformPhase.UPDATING
         await save_instance_status(instance)
     # First, get the realm for the platform and wait for it to become ready
     ekrealms = await ekresource_for_model(api.Realm)

@@ -41,6 +41,7 @@ class PlatformPhase(str, schema.Enum):
     """
     UNKNOWN  = "Unknown"
     PENDING  = "Pending"
+    UPDATING = "Updating"
     READY    = "Ready"
     DELETING = "Deleting"
     FAILED   = "Failed"

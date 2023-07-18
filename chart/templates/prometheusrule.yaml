@@ -1,0 +1,36 @@
+{{- if and .Values.metrics.enabled .Values.metrics.prometheus.rules.enabled }}
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: {{ include "azimuth-identity-operator.fullname" . }}
+  labels: {{ include "azimuth-identity-operator.labels" . | nindent 4 }}
+spec:
+  groups:
+    - name: azimuth-identity-operator.rules
+      rules:
+        - alert: AzimuthIdentityRealmNotReady
+          expr: >-
+            sum(azimuth_identity_realm_phase{phase!="Ready"}) by(realm_namespace, realm_name) > 0
+          for: 10m
+          annotations:
+            description: >-
+              Identity realm
+              {{ "{{" }} $labels.realm_namespace {{ "}}" }}/{{ "{{" }} $labels.realm_name {{ "}}" }}
+              has been in a non-ready state for longer than ten minutes.
+            summary: Identity realm has been in a non-ready state for more than ten minutes.
+          labels:
+            severity: warning
+
+        - alert: AzimuthIdentityPlatformNotReady
+          expr: >-
+            sum(azimuth_identity_platform_phase{phase!="Ready"}) by(platform_namespace, platform_name) > 0
+          for: 10m
+          annotations:
+            description: >-
+              Identity platform
+              {{ "{{" }} $labels.platform_namespace {{ "}}" }}/{{ "{{" }} $labels.platform_name {{ "}}" }}
+              has been in a non-ready state for longer than ten minutes.
+            summary: Identity platform has been in a non-ready state for more than ten minutes.
+          labels:
+            severity: warning
+{{- end }}

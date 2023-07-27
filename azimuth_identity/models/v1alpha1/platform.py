@@ -1,6 +1,6 @@
 import typing as t
 
-from pydantic import Extra, Field, AnyHttpUrl, constr
+from pydantic import Extra, Field, constr
 
 from kube_custom_resource import CustomResource, schema
 
@@ -27,8 +27,8 @@ class PlatformSpec(schema.BaseModel):
         ...,
         description = "The name of the realm that the platform belongs to."
     )
-    zenith_services: t.Dict[str, ZenithServiceSpec] = Field(
-        default_factory = list,
+    zenith_services: schema.Dict[str, ZenithServiceSpec] = Field(
+        default_factory = dict,
         description = (
             "Map of name to subdomain and FQDN for Zenith services belonging to the platform."
         )
@@ -41,6 +41,7 @@ class PlatformPhase(str, schema.Enum):
     """
     UNKNOWN  = "Unknown"
     PENDING  = "Pending"
+    UPDATING = "Updating"
     READY    = "Ready"
     DELETING = "Deleting"
     FAILED   = "Failed"

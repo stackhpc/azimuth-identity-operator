@@ -1,0 +1,67 @@
+{{- if and .Values.metrics.enabled .Values.metrics.prometheus.rules.enabled }}
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: {{ include "azimuth-identity-operator.fullname" . }}
+  labels: {{ include "azimuth-identity-operator.labels" . | nindent 4 }}
+spec:
+  groups:
+    - name: azimuth-identity-operator.recording-rules
+      rules:
+        # This metric reports the number of active Zenith clients for a platform service
+        - record: azimuth_identity_platform_service_active_clients
+          expr: >-
+            azimuth_identity_platform_service *
+              on(service_subdomain) group_left() sum(
+                label_replace(
+                  zenith_service_client_status,
+                  "service_subdomain",
+                  "$1",
+                  "service_name",
+                  "(.+)"
+                )
+              ) by (service_subdomain)
+              or
+              on(service_subdomain) (azimuth_identity_platform_service * 0)
+
+    - name: azimuth-identity-operator.alerts
+      rules:
+        - alert: AzimuthIdentityRealmNotReady
+          expr: >-
+            sum(azimuth_identity_realm_phase{phase!="Ready"}) by(realm_namespace, realm_name) > 0
+          for: 10m
+          annotations:
+            description: >-
+              Identity realm
+              {{ "{{" }} $labels.realm_namespace {{ "}}" }}/{{ "{{" }} $labels.realm_name {{ "}}" }}
+              has been in a non-ready state for longer than ten minutes.
+            summary: Identity realm has been in a non-ready state for more than ten minutes.
+          labels:
+            severity: warning
+
+        - alert: AzimuthIdentityPlatformNotReady
+          expr: >-
+            sum(azimuth_identity_platform_phase{phase!="Ready"}) by(platform_namespace, platform_name) > 0
+          for: 10m
+          annotations:
+            description: >-
+              Identity platform
+              {{ "{{" }} $labels.platform_namespace {{ "}}" }}/{{ "{{" }} $labels.platform_name {{ "}}" }}
+              has been in a non-ready state for longer than ten minutes.
+            summary: Identity platform has been in a non-ready state for more than ten minutes.
+          labels:
+            severity: warning
+
+        - alert: AzimuthIdentityPlatformServiceHasNoClients
+          expr: >-
+            azimuth_identity_platform_service_active_clients == 0
+          for: 15m
+          annotations:
+            description: >-
+              Identity platform service
+              {{ "{{" }} $labels.platform_namespace {{ "}}" }}/{{ "{{" }} $labels.platform_name {{ "}}" }}/{{ "{{" }} $labels.service_name {{ "}}" }}
+              has not had a Zenith client for more than 15 minutes.
+            summary: Identity platform service has not had a Zenith client for more than 15 minutes.
+          labels:
+            severity: warning
+{{- end }}

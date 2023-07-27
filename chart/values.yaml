@@ -52,3 +52,86 @@ affinity: {}
 
 # Tolerations for operator pods
 tolerations: []
+
+# Settings for kube-state-metrics
+metrics:
+  enabled: false
+  # Configuration for the dashboard
+  dashboard:
+    enabled: true
+    labels:
+      grafana_dashboard: "1"
+  prometheus:
+    rules:
+      enabled: true
+    monitor:
+      enabled: true
+      honorLabels: true
+  # Disable all the default collectors
+  collectors: []
+  # Allow kube-state-metrics read-only access to our CRDs
+  rbac:
+    create: true
+    extraRules:
+      - apiGroups:
+          - identity.azimuth.stackhpc.com
+        resources:
+          - platforms
+          - realms
+        verbs:
+          - list
+          - watch
+          - get
+  # Configure kube-state-metrics to report only on our custom resources
+  extraArgs:
+    - --custom-resource-state-only=true
+  customResourceState:
+    enabled: true
+    config:
+      kind: CustomResourceStateMetrics
+      spec:
+        resources:
+          - groupVersionKind:
+              group: identity.azimuth.stackhpc.com
+              version: v1alpha1
+              kind: Realm
+            metricNamePrefix: azimuth_identity_realm
+            labelsFromPath:
+              realm_namespace: [metadata, namespace]
+              realm_name: [metadata, name]
+            metrics:
+              - name: phase
+                help: "Realm phase"
+                each:
+                  type: Info
+                  info:
+                    labelsFromPath:
+                      phase: [status, phase]
+
+          - groupVersionKind:
+              group: identity.azimuth.stackhpc.com
+              version: v1alpha1
+              kind: Platform
+            metricNamePrefix: azimuth_identity_platform
+            labelsFromPath:
+              platform_namespace: [metadata, namespace]
+              platform_name: [metadata, name]
+              realm_name: [spec, realmName]
+            metrics:
+              - name: service
+                help: "Indicates the services for the platform"
+                each:
+                  type: Info
+                  info:
+                    path: [spec, zenithServices]
+                    labelFromKey: service_name
+                    labelsFromPath:
+                      service_subdomain: [subdomain]
+                      service_fqdn: [fqdn]
+              - name: phase
+                help: "Platform phase"
+                each:
+                  type: Info
+                  info:
+                    labelsFromPath:
+                      phase: [status, phase]

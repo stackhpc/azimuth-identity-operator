@@ -107,7 +107,7 @@ def model_handler(model, register_fn, **kwargs):
                 if "instance" not in handler_kwargs:
                     handler_kwargs["instance"] = model.parse_obj(handler_kwargs["body"])
                 try:
-                    print(await ekclient._transport._pool.connections)
+                    print(ekclient._transport._pool.connections)
                     return await func(**handler_kwargs)
                 except ApiError as exc:
                     if exc.status_code == 409:

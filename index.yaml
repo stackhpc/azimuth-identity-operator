@@ -3,7 +3,7 @@ entries:
   azimuth-identity-operator:
   - apiVersion: v2
     appVersion: d22d266
-    created: "2023-08-04T09:44:32.113650761Z"
+    created: "2023-08-04T13:08:07.474091447Z"
     dependencies:
     - alias: metrics
       condition: metrics.enabled
@@ -19,7 +19,7 @@ entries:
     version: 0.1.0-dev.0.main.16
   - apiVersion: v2
     appVersion: 17857d3
-    created: "2023-08-04T09:44:32.1115506Z"
+    created: "2023-08-04T13:08:07.471498824Z"
     description: Helm chart for deploying the Azimuth identity operator.
     digest: 07154c3f1e456b3d51aad15e2d0544cc42a30d522fc38fde51ed86b98a0d5be0
     name: azimuth-identity-operator
@@ -29,7 +29,7 @@ entries:
     version: 0.1.0-dev.0.main.15
   - apiVersion: v2
     appVersion: 6310b26
-    created: "2023-08-04T09:44:32.11119349Z"
+    created: "2023-08-04T13:08:07.47106192Z"
     description: Helm chart for deploying the Azimuth identity operator.
     digest: 1275cd8d73eb6e68cb803b79ae81bc5ea73c020c38754db82a976426a4842ecd
     name: azimuth-identity-operator
@@ -39,7 +39,7 @@ entries:
     version: 0.1.0-dev.0.main.14
   - apiVersion: v2
     appVersion: ffb64b1
-    created: "2023-08-04T09:44:32.110784478Z"
+    created: "2023-08-04T13:08:07.470633916Z"
     description: Helm chart for deploying the Azimuth identity operator.
     digest: 10fb67fbcdc44ec6d488013b8df5fdc692105101c373409bee7d431da673f2f7
     name: azimuth-identity-operator
@@ -49,7 +49,7 @@ entries:
     version: 0.1.0-dev.0.main.13
   - apiVersion: v2
     appVersion: dd26d9a
-    created: "2023-08-04T09:44:32.110458569Z"
+    created: "2023-08-04T13:08:07.470101112Z"
     description: Helm chart for deploying the Azimuth identity operator.
     digest: d92bb2262ebad88f10b02103a81e99ef90f349c99fe494a487449f3a771c68b6
     name: azimuth-identity-operator
@@ -59,7 +59,7 @@ entries:
     version: 0.1.0-dev.0.main.11
   - apiVersion: v2
     appVersion: 9b1a97c
-    created: "2023-08-04T09:44:32.110130759Z"
+    created: "2023-08-04T13:08:07.469669008Z"
     description: Helm chart for deploying the Azimuth identity operator.
     digest: 30fce4f26dda71efab2cfaf87d4dfdd2c451f30d4af9f4791a4f3c7da05bd628
     name: azimuth-identity-operator
@@ -69,7 +69,7 @@ entries:
     version: 0.1.0-dev.0.main.10
   - apiVersion: v2
     appVersion: 06e388d
-    created: "2023-08-04T09:44:32.118237195Z"
+    created: "2023-08-04T13:08:07.478069581Z"
     description: Helm chart for deploying the Azimuth identity operator.
     digest: 3944137e850674dd70af885a0ce1996244bee4088f497638af28a5cd0d78b31d
     name: azimuth-identity-operator
@@ -79,7 +79,7 @@ entries:
     version: 0.1.0-dev.0.main.9
   - apiVersion: v2
     appVersion: c5f6eed
-    created: "2023-08-04T09:44:32.117864484Z"
+    created: "2023-08-04T13:08:07.477056073Z"
     description: Helm chart for deploying the Azimuth identity operator.
     digest: 8cfbbd0d9f90d349d76ef4a58fbce3a8b4cd9029fbb9bbe784b7fe0d96687d52
     name: azimuth-identity-operator
@@ -89,7 +89,7 @@ entries:
     version: 0.1.0-dev.0.main.8
   - apiVersion: v2
     appVersion: 568262b
-    created: "2023-08-04T09:44:32.116275138Z"
+    created: "2023-08-04T13:08:07.476603469Z"
     description: Helm chart for deploying the Azimuth identity operator.
     digest: e835a637975ae0a66f06a3b74ae6729ef2a3e7acc9df242ee8731aa7ec03b68d
     name: azimuth-identity-operator
@@ -99,7 +99,7 @@ entries:
     version: 0.1.0-dev.0.main.7
   - apiVersion: v2
     appVersion: e942f6d
-    created: "2023-08-04T09:44:32.115801524Z"
+    created: "2023-08-04T13:08:07.476176465Z"
     description: Helm chart for deploying the Azimuth identity operator.
     digest: f0e94a89f43c9e28e65b61c32413b71480d6a24312a5c0478170ac2b14599d87
     name: azimuth-identity-operator
@@ -109,7 +109,7 @@ entries:
     version: 0.1.0-dev.0.main.6
   - apiVersion: v2
     appVersion: ca0bb1c
-    created: "2023-08-04T09:44:32.115035802Z"
+    created: "2023-08-04T13:08:07.475741361Z"
     description: Helm chart for deploying the Azimuth identity operator.
     digest: b79062e340998adeaaf2649d27ad229e2071a5a35e265a073765cef1d23763ca
     name: azimuth-identity-operator
@@ -119,7 +119,7 @@ entries:
     version: 0.1.0-dev.0.main.5
   - apiVersion: v2
     appVersion: ee2235d
-    created: "2023-08-04T09:44:32.114694392Z"
+    created: "2023-08-04T13:08:07.475312957Z"
     description: Helm chart for deploying the Azimuth identity operator.
     digest: 225dd23a238a510e275f91a00b2534e32c05bdf57a030bc65c6235c6a6fd25f5
     name: azimuth-identity-operator
@@ -129,7 +129,7 @@ entries:
     version: 0.1.0-dev.0.main.4
   - apiVersion: v2
     appVersion: 9165bb9
-    created: "2023-08-04T09:44:32.114358382Z"
+    created: "2023-08-04T13:08:07.474906954Z"
     description: Helm chart for deploying the Azimuth identity operator.
     digest: 6a926cc9a2d9b208bd11429914d8a4be0f4c867a06227bb5efcfcead4599c0aa
     name: azimuth-identity-operator
@@ -139,7 +139,7 @@ entries:
     version: 0.1.0-dev.0.main.3
   - apiVersion: v2
     appVersion: c17b420
-    created: "2023-08-04T09:44:32.114008972Z"
+    created: "2023-08-04T13:08:07.47450965Z"
     description: Helm chart for deploying the Azimuth identity operator.
     digest: 24fd1a221c33ef777eee6b9c01d605a84808662dcae8fa758c20eda2c4494c56
     name: azimuth-identity-operator
@@ -149,7 +149,7 @@ entries:
     version: 0.1.0-dev.0.main.2
   - apiVersion: v2
     appVersion: ae1c80b
-    created: "2023-08-04T09:44:32.109760048Z"
+    created: "2023-08-04T13:08:07.469202204Z"
     description: Helm chart for deploying the Azimuth identity operator.
     digest: 985ea98eeddb6bc873fbd367f5f805392f3f618f71739e22b317f67fcb5f356b
     name: azimuth-identity-operator
@@ -158,8 +158,24 @@ entries:
     - azimuth-identity-operator-0.1.0-dev.0.main.1.tgz
     version: 0.1.0-dev.0.main.1
   - apiVersion: v2
+    appVersion: e74b6dc
+    created: "2023-08-04T13:08:07.4687922Z"
+    dependencies:
+    - alias: metrics
+      condition: metrics.enabled
+      name: kube-state-metrics
+      repository: https://prometheus-community.github.io/helm-charts
+      version: 5.8.0
+    description: Helm chart for deploying the Azimuth identity operator.
+    digest: e86ea231dc15c5630c9b4e2402fd342cd015bf8d053dfd995df14591600a653b
+    name: azimuth-identity-operator
+    type: application
+    urls:
+    - azimuth-identity-operator-0.1.0-dev.0.fix-update-easykube.18.tgz
+    version: 0.1.0-dev.0.fix-update-easykube.18
+  - apiVersion: v2
     appVersion: d0d2155
-    created: "2023-08-04T09:44:32.109427139Z"
+    created: "2023-08-04T13:08:07.463647255Z"
     dependencies:
     - alias: metrics
       condition: metrics.enabled
@@ -175,7 +191,7 @@ entries:
     version: 0.1.0-dev.0.fix-update-easykube.17
   - apiVersion: v2
     appVersion: a0bf1bb
-    created: "2023-08-04T09:44:32.107330678Z"
+    created: "2023-08-04T13:08:07.460966332Z"
     dependencies:
     - alias: metrics
       condition: metrics.enabled
@@ -191,7 +207,7 @@ entries:
     version: 0.1.0-dev.0.feature-monitoring.21
   - apiVersion: v2
     appVersion: "7000318"
-    created: "2023-08-04T09:44:32.10431819Z"
+    created: "2023-08-04T13:08:07.458300309Z"
     dependencies:
     - alias: metrics
       condition: metrics.enabled
@@ -207,7 +223,7 @@ entries:
     version: 0.1.0-dev.0.feature-monitoring.20
   - apiVersion: v2
     appVersion: ab7e379
-    created: "2023-08-04T09:44:32.101313603Z"
+    created: "2023-08-04T13:08:07.454857979Z"
     dependencies:
     - alias: metrics
       condition: metrics.enabled
@@ -223,7 +239,7 @@ entries:
     version: 0.1.0-dev.0.feature-monitoring.19
   - apiVersion: v2
     appVersion: cc16cce
-    created: "2023-08-04T09:44:32.099351946Z"
+    created: "2023-08-04T13:08:07.450079737Z"
     dependencies:
     - alias: metrics
       condition: metrics.enabled
@@ -239,7 +255,7 @@ entries:
     version: 0.1.0-dev.0.feature-monitoring.18
   - apiVersion: v2
     appVersion: 7dd52b2
-    created: "2023-08-04T09:44:32.097394089Z"
+    created: "2023-08-04T13:08:07.447475014Z"
     dependencies:
     - alias: metrics
       condition: metrics.enabled
@@ -255,7 +271,7 @@ entries:
     version: 0.1.0-dev.0.feature-monitoring.17
   - apiVersion: v2
     appVersion: 2fe2e2d
-    created: "2023-08-04T09:44:32.095478933Z"
+    created: "2023-08-04T13:08:07.445079393Z"
     description: Helm chart for deploying the Azimuth identity operator.
     digest: 493e628733b1263ea5ab412a87ce5cf64142aef2c42030496e38f140b9c7aba2
     name: azimuth-identity-operator
@@ -263,4 +279,4 @@ entries:
     urls:
     - azimuth-identity-operator-0.1.0-dev.0.feature-monitoring.16.tgz
     version: 0.1.0-dev.0.feature-monitoring.16
-generated: "2023-08-04T09:44:32.094890216Z"
+generated: "2023-08-04T13:08:07.444350387Z"

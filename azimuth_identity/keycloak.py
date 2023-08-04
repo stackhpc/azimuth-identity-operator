@@ -1,4 +1,4 @@
-import contextlib
+import asyncio
 import copy
 import json
 import logging
@@ -14,48 +14,70 @@ from .models import v1alpha1 as api
 logger = logging.getLogger(__name__)
 
 
-async def httpx_response_hook(response):
+class Auth(httpx.Auth):
     """
-    Hook for handling responses 
+    Authenticator for Keycloak requests.
     """
-    logger.info(
-        "KCAPI request: \"%s %s\" %s",
-        response.request.method,
-        response.request.url,
-        response.status_code
-    )
-    response.raise_for_status()
+    requires_response_body = True
+
+    def __init__(self, client, token_url):
+        self._client = client
+        self._token_url = token_url
+        self._token = None
+        self._lock = asyncio.Lock()
+
+    async def refresh_token(self):
+        # We want to make sure only one request refreshes the token
+        token = self._token
+        async with self._lock:
+            # If someone else changed the token in the time it took us
+            # to acquire the lock, there is nothing for us to do
+            # Otherwise, fetch a new token
+            if self._token == token:
+                response = await self._client.post(
+                    self._token_url,
+                    data = {
+                        "grant_type": "password",
+                        "client_id": settings.keycloak.client_id,
+                        "username": settings.keycloak.username,
+                        "password": settings.keycloak.password,
+                    },
+                    auth = None
+                )
+                response.raise_for_status()
+                self._token = response.json()["access_token"]
+
+    async def async_auth_flow(self, request):
+        if self._token is None:
+            await self.refresh_token()
+        while True:
+            request.headers["Authorization"] = f"Bearer {self._token}"
+            response = yield request
+            if response.status_code == 401:
+                await self.refresh_token()
+                continue
+            response.raise_for_status()
+            break
 
 
-def httpx_async_client(**kwargs):
-    """
-    Returns a new HTTPX AsyncClient with the given kwargs.
-    """
-    event_hooks = kwargs.setdefault("event_hooks", {})
-    event_hooks.setdefault("response", []).extend([httpx_response_hook])
-    return httpx.AsyncClient(**kwargs)
+# The client must be initialised inside the event loop for the auth lock to work correctly
+kc_client = None
 
 
-@contextlib.asynccontextmanager
-async def admin_client():
-    """
-    Context manager for a client that is configured to access the Keycloak admin API.
-    """
-    async with httpx_async_client(base_url = settings.keycloak.base_url) as client:
-        response = await client.post(
-            f"/realms/{settings.keycloak.client_realm}/protocol/openid-connect/token",
-            data = {
-                "grant_type": "password",
-                "client_id": settings.keycloak.client_id,
-                "username": settings.keycloak.username,
-                "password": settings.keycloak.password,
-            }
+async def init_client():
+    global kc_client
+    kc_client = httpx.AsyncClient(base_url = f"{settings.keycloak.base_url}/admin/realms")
+    kc_client.auth = Auth(
+        kc_client,
+        (
+            f"{settings.keycloak.base_url}/realms/{settings.keycloak.client_realm}"
+            "/protocol/openid-connect/token"
         )
-        token = response.json()["access_token"]
-    admin_base_url = f"{settings.keycloak.base_url}/admin/realms"
-    headers = { "Authorization": f"Bearer {token}" }
-    async with httpx_async_client(base_url = admin_base_url, headers = headers) as client:
-        yield client
+    )
+
+
+async def close_client():
+    await kc_client.aclose()
 
 
 def realm_name(realm: api.Realm):
@@ -70,7 +92,7 @@ def realm_name(realm: api.Realm):
         return f"{realm.metadata.namespace}-{realm.metadata.name}"
 
 
-async def ensure_realm(kc_client, realm_name: str):
+async def ensure_realm(realm_name: str):
     """
     Ensures that the specified Keycloak realm exists and is enabled.
     """
@@ -92,7 +114,19 @@ async def ensure_realm(kc_client, realm_name: str):
         await kc_client.put(f"/{realm_name}", json = realm)
 
 
-async def _ensure_group(kc_client, realm_name: str, group_name: str):
+async def remove_realm(realm_name: str):
+    """
+    Ensures that the specified Keycloak realm is removed.
+    """
+    try:
+        await kc_client.delete(f"/{realm_name}")
+    except httpx.HTTPStatusError as exc:
+        # Not found is fine - it means the realm doesn't exist
+        if exc.response.status_code != 404:
+            raise
+
+
+async def _ensure_group(realm_name: str, group_name: str):
     """
     Ensures that the specified group exists in Keycloak.
     """
@@ -108,7 +142,7 @@ async def _ensure_group(kc_client, realm_name: str, group_name: str):
     try:
         group = next(group for group in response.json() if group["name"] == group_name)
     except StopIteration:
-        response = await kc_client.post(f"{realm_name}/groups", json = { "name": group_name })
+        response = await kc_client.post(f"/{realm_name}/groups", json = { "name": group_name })
         # The Keycloak API does not return a representation in the create response,
         # but it does return the URL to get one in the location header
         response = await kc_client.get(response.headers["location"])
@@ -117,12 +151,12 @@ async def _ensure_group(kc_client, realm_name: str, group_name: str):
     return group
 
 
-async def ensure_admins_group(kc_client, realm_name: str):
+async def ensure_admins_group(realm_name: str):
     """
     Ensures that the Keycloak admins group is set up and has the required roles.
     """
     # Get or create the group
-    group = await _ensure_group(kc_client, realm_name, settings.keycloak.admins_group_name)
+    group = await _ensure_group(realm_name, settings.keycloak.admins_group_name)
     # Make sure that the group has all the client roles that are configured
     # We need to turn client names into IDs, so load all the clients and index them
     response = await kc_client.get(f"/{realm_name}/clients")
@@ -143,15 +177,15 @@ async def ensure_admins_group(kc_client, realm_name: str):
             )
 
 
-async def ensure_platform_users_group(kc_client, realm_name: str):
+async def ensure_platform_users_group(realm_name: str):
     """
     Ensures that the platform users group is set up in Keycloak.
     """
     # Get or create the group
-    await _ensure_group(kc_client, realm_name, settings.keycloak.platform_users_group_name)
+    await _ensure_group(realm_name, settings.keycloak.platform_users_group_name)
 
 
-async def ensure_identity_provider(kc_client, realm: api.Realm, realm_name, dex_client):
+async def ensure_identity_provider(realm: api.Realm, realm_name, dex_client):
     """
     Ensures that a Keycloak identity provider exists for Azimuth for the given realm.
     """
@@ -174,11 +208,7 @@ async def ensure_identity_provider(kc_client, realm: api.Realm, realm_name, dex_
         "alias": settings.dex.keycloak_client_alias,
         "displayName": "Azimuth",
         # Ensure that the IDP is using our first login flow
-        "firstBrokerLoginFlowAlias": await _ensure_idp_first_login_flow(
-            kc_client,
-            realm,
-            realm_name
-        ),
+        "firstBrokerLoginFlowAlias": await _ensure_idp_first_login_flow(realm, realm_name),
     })
     issuer = "{scheme}://{host}{prefix}".format(
         scheme = "https" if settings.dex.tls_secret else "http",
@@ -209,23 +239,21 @@ async def ensure_identity_provider(kc_client, realm: api.Realm, realm_name, dex_
         await kc_client.put(idp_url, json = next_idp)
     # Ensure that the mappers are properly configured
     await _ensure_idp_group_mapper(
-        kc_client,
         realm,
         idp_url,
         "realm-admin",
         settings.keycloak.admins_group_name
     )
     await _ensure_idp_group_mapper(
-        kc_client,
         realm,
         idp_url,
         "platform-user",
         settings.keycloak.platform_users_group_name
     )
-    await _ensure_idp_federated_id_mapper(kc_client, realm, idp_url)
+    await _ensure_idp_federated_id_mapper(realm, idp_url)
 
 
-async def _ensure_idp_first_login_flow(kc_client, realm: api.Realm, realm_name: str):
+async def _ensure_idp_first_login_flow(realm: api.Realm, realm_name: str):
     """
     Ensures that the first login flow for the IDP exists and that the review profile
     execution is disabled.
@@ -250,7 +278,7 @@ async def _ensure_idp_first_login_flow(kc_client, realm: api.Realm, realm_name: 
                 "newName": settings.keycloak.target_first_login_flow_alias
             }
         )
-        return await _ensure_idp_first_login_flow(kc_client, realm, realm_name)
+        return await _ensure_idp_first_login_flow(realm, realm_name)
     else:
         existing_execution = next(
             execution
@@ -265,7 +293,6 @@ async def _ensure_idp_first_login_flow(kc_client, realm: api.Realm, realm_name: 
 
 
 async def _ensure_idp_group_mapper(
-    kc_client,
     realm: api.Realm,
     idp_url: str,
     mapper_name: str,
@@ -312,7 +339,7 @@ async def _ensure_idp_group_mapper(
         )
 
 
-async def _ensure_idp_federated_id_mapper(kc_client, realm: api.Realm, idp_url: str):
+async def _ensure_idp_federated_id_mapper(realm: api.Realm, idp_url: str):
     """
     Ensures that the IDP has a mapper that sets an attribute with the federated ID.
     """
@@ -348,7 +375,7 @@ async def _ensure_idp_federated_id_mapper(kc_client, realm: api.Realm, idp_url: 
         )
 
 
-async def ensure_groups_scope(kc_client, realm: api.Realm, realm_name: str):
+async def ensure_groups_scope(realm: api.Realm, realm_name: str):
     """
     Ensures that a groups scope exists that provides the user's groups.
     """
@@ -416,7 +443,7 @@ async def ensure_groups_scope(kc_client, realm: api.Realm, realm_name: str):
         )
 
 
-async def ensure_platform_group(kc_client, realm_name: str, platform: api.Platform):
+async def ensure_platform_group(realm_name: str, platform: api.Platform):
     """
     Ensures that a group exists in Keycloak for the given platform.
     """
@@ -437,7 +464,7 @@ async def ensure_platform_group(kc_client, realm_name: str, platform: api.Platfo
         )
     except StopIteration:
         response = await kc_client.post(
-            f"{realm_name}/groups",
+            f"/{realm_name}/groups",
             json = { "name": platform.metadata.name }
         )
         # The Keycloak API does not return a representation in the create response,
@@ -446,7 +473,7 @@ async def ensure_platform_group(kc_client, realm_name: str, platform: api.Platfo
         return response.json()
     
 
-async def remove_platform_group(kc_client, realm_name: str, platform: api.Platform):
+async def remove_platform_group(realm_name: str, platform: api.Platform):
     """
     Removes the group from Keycloak for the given platform.
     """
@@ -474,7 +501,6 @@ async def remove_platform_group(kc_client, realm_name: str, platform: api.Platfo
 
 
 async def ensure_platform_service_subgroup(
-    kc_client,
     realm_name: str,
     group: t.Dict[str, t.Any],
     service_name: str
@@ -498,7 +524,6 @@ async def ensure_platform_service_subgroup(
     
 
 async def prune_platform_service_subgroups(
-    kc_client,
     realm_name: str,
     platform: api.Platform,
     group: t.Dict[str, t.Any]
@@ -515,7 +540,6 @@ async def prune_platform_service_subgroups(
 
 
 async def ensure_platform_service_client(
-    kc_client,
     realm_name: str,
     platform: api.Platform,
     service_name: str,
@@ -566,7 +590,6 @@ async def ensure_platform_service_client(
 
 
 async def prune_platform_service_clients(
-    kc_client,
     realm_name: str,
     platform: api.Platform,
     all: bool = False

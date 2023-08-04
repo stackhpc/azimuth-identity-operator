@@ -1,17 +1,11 @@
-import base64
-import contextlib
-import copy
-import datetime as dt
+import asyncio
 import functools
-import hashlib
 import json
 import logging
 import sys
-import typing as t
 
 import kopf
 import httpx
-import yaml
 
 from easykube import Configuration, ApiError
 from kube_custom_resource import CustomResourceRegistry
@@ -36,6 +30,10 @@ ekclient = (
 # Create a registry of custom resources and populate it from the models module
 registry = CustomResourceRegistry(settings.api_group, settings.crd_categories)
 registry.discover_models(models)
+
+
+# Create a semaphore to restrict the number of objects that can be processed concurrently
+semaphore = asyncio.Semaphore(settings.max_concurrency)
 
 
 @kopf.on.startup()
@@ -105,16 +103,17 @@ def model_handler(model, register_fn, **kwargs):
     def decorator(func):
         @functools.wraps(func)
         async def handler(**handler_kwargs):
-            if "instance" not in handler_kwargs:
-                handler_kwargs["instance"] = model.parse_obj(handler_kwargs["body"])
-            try:
-                return await func(**handler_kwargs)
-            except ApiError as exc:
-                if exc.status_code == 409:
-                    # When a handler fails with a 409, we want to retry quickly
-                    raise kopf.TemporaryError(str(exc), delay = 5)
-                else:
-                    raise
+            async with semaphore:
+                if "instance" not in handler_kwargs:
+                    handler_kwargs["instance"] = model.parse_obj(handler_kwargs["body"])
+                try:
+                    return await func(**handler_kwargs)
+                except ApiError as exc:
+                    if exc.status_code == 409:
+                        # When a handler fails with a 409, we want to retry quickly
+                        raise kopf.TemporaryError(str(exc), delay = 5)
+                    else:
+                        raise
         return register_fn(api_version, model._meta.plural_name, **kwargs)(handler)
     return decorator
 

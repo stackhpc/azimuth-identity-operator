@@ -18,11 +18,11 @@ logger = logging.getLogger(__name__)
 
 # Create an easykube client from the environment
 from pydantic.json import pydantic_encoder
-ekclient = (
-    Configuration
-        .from_environment(json_encoder = pydantic_encoder)
-        .async_client(default_field_manager = settings.easykube_field_manager)
-)
+ekconfig = Configuration.from_environment(json_encoder = pydantic_encoder)
+
+
+def easykube_client():
+    return ekconfig.async_client(default_field_manager = settings.easykube_field_manager)
 
 
 # Create a registry of custom resources and populate it from the models module
@@ -45,8 +45,9 @@ async def apply_settings(**kwargs):
         key = "last-handled-configuration",
     )
     try:
-        for crd in registry:
-            await ekclient.apply_object(crd.kubernetes_resource(), force = True)
+        async with easykube_client() as ekclient:
+            for crd in registry:
+                await ekclient.apply_object(crd.kubernetes_resource(), force = True)
     except Exception:
         logger.exception("error applying CRDs - exiting")
         sys.exit(1)
@@ -58,11 +59,11 @@ async def on_cleanup(**kwargs):
     """
     Runs on operator shutdown.
     """
-    await ekclient.aclose()
+    # await ekclient.aclose()
     await keycloak.close_client()
 
 
-async def ekresource_for_model(model, subresource = None):
+async def ekresource_for_model(ekclient, model, subresource = None):
     """
     Returns an easykube resource for the given model.
     """
@@ -73,11 +74,11 @@ async def ekresource_for_model(model, subresource = None):
     return await api.resource(resource)
 
 
-async def save_instance_status(instance):
+async def save_instance_status(ekclient, instance):
     """
     Save the status of the given instance.
     """
-    ekresource = await ekresource_for_model(type(instance), "status")
+    ekresource = await ekresource_for_model(ekclient, type(instance), "status")
     data = await ekresource.replace(
         instance.metadata.name,
         {
@@ -99,10 +100,24 @@ def model_handler(model, register_fn, **kwargs):
     def decorator(func):
         @functools.wraps(func)
         async def handler(**handler_kwargs):
+            ekclient = None
             if "instance" not in handler_kwargs:
                 handler_kwargs["instance"] = model.parse_obj(handler_kwargs["body"])
+            if "ekclient" not in handler_kwargs:
+                ekclient = handler_kwargs["ekclient"] = easykube_client()
+                await ekclient.__aenter__()
+            print(handler_kwargs["ekclient"]._transport._pool.connections)
+            print(keycloak.kc_client._transport._pool.connections)
             try:
-                return await func(**handler_kwargs)
+                try:
+                    return await func(**handler_kwargs)
+                except:
+                    if ekclient:
+                        await ekclient.__aexit__(*sys.exc_info())
+                    raise
+                finally:
+                    if ekclient:
+                        await ekclient.__aexit__(None, None, None)
             except ApiError as exc:
                 if exc.status_code == 409:
                     # When a handler fails with a 409, we want to retry quickly
@@ -116,13 +131,13 @@ def model_handler(model, register_fn, **kwargs):
 @model_handler(api.Realm, kopf.on.create)
 @model_handler(api.Realm, kopf.on.update, field = "spec")
 @model_handler(api.Realm, kopf.on.resume)
-async def reconcile_realm(instance: api.Realm, **kwargs):
+async def reconcile_realm(ekclient, instance: api.Realm, **kwargs):
     """
     Handles the reconciliation of a realm.
     """
     if instance.status.phase == api.RealmPhase.UNKNOWN:
         instance.status.phase = api.RealmPhase.PENDING
-        await save_instance_status(instance)
+        await save_instance_status(ekclient, instance)
     # Derive the realm name from the realm instance
     realm_name = keycloak.realm_name(instance)
     # Ensure that the Dex instance for the realm exists
@@ -140,17 +155,17 @@ async def reconcile_realm(instance: api.Realm, **kwargs):
     issuer_url = f"{settings.keycloak.base_url}/realms/{realm_name}"
     instance.status.oidc_issuer_url = issuer_url
     instance.status.admin_url = f"{settings.keycloak.base_url}/admin/{realm_name}/console"
-    await save_instance_status(instance)
+    await save_instance_status(ekclient, instance)
 
 
 @model_handler(api.Realm, kopf.on.delete)
-async def delete_realm(instance: api.Realm, **kwargs):
+async def delete_realm(ekclient, instance: api.Realm, **kwargs):
     """
     Handes the deletion of a realm.
     """
     if instance.status.phase != api.RealmPhase.DELETING:
         instance.status.phase = api.RealmPhase.DELETING
-        await save_instance_status(instance)
+        await save_instance_status(ekclient, instance)
     # Delete the Dex instance
     await dex.delete_realm_instance(instance)
     # Remove the realm from Keycloak
@@ -161,20 +176,20 @@ async def delete_realm(instance: api.Realm, **kwargs):
 @model_handler(api.Platform, kopf.on.create, param = "CREATE")
 @model_handler(api.Platform, kopf.on.update, field = "spec", param = "UPDATE")
 @model_handler(api.Platform, kopf.on.resume, param = "RESUME")
-async def reconcile_platform(instance: api.Platform, param, **kwargs):
+async def reconcile_platform(ekclient, instance: api.Platform, param, **kwargs):
     """
     Handles the reconciliation of a platform.
     """
     # Acknowledge the platform at the earliest opportunity
     if instance.status.phase == api.PlatformPhase.UNKNOWN:
         instance.status.phase = api.PlatformPhase.PENDING
-        await save_instance_status(instance)
+        await save_instance_status(ekclient, instance)
     # If the spec has changed, put the platform into the updating phase
     if param == "UPDATE":
         instance.status.phase = api.PlatformPhase.UPDATING
-        await save_instance_status(instance)
+        await save_instance_status(ekclient, instance)
     # First, get the realm for the platform and wait for it to become ready
-    ekrealms = await ekresource_for_model(api.Realm)
+    ekrealms = await ekresource_for_model(ekclient, api.Realm)
     try:
         realm = await ekrealms.fetch(
             instance.spec.realm_name,
@@ -271,17 +286,17 @@ async def reconcile_platform(instance: api.Platform, param, **kwargs):
     # Delete all the subgroups belonging to services that we no longer recognise
     await keycloak.prune_platform_service_subgroups(realm_name, instance, group)
     instance.status.phase = api.PlatformPhase.READY
-    await save_instance_status(instance)
+    await save_instance_status(ekclient, instance)
 
 
 @model_handler(api.Platform, kopf.on.delete)
-async def delete_platform(instance: api.Platform, **kwargs):
+async def delete_platform(ekclient, instance: api.Platform, **kwargs):
     """
     Handles the deletion of a platform.
     """
     if instance.status.phase != api.PlatformPhase.DELETING:
         instance.status.phase = api.PlatformPhase.DELETING
-        await save_instance_status(instance)
+        await save_instance_status(ekclient, instance)
     # First, delete the Zenith discovery secrets
     secrets = await ekclient.api("v1").resource("secrets")
     await secrets.delete_all(
@@ -293,7 +308,7 @@ async def delete_platform(instance: api.Platform, **kwargs):
         namespace = settings.keycloak.zenith_discovery_namespace
     )
     # Get the realm for the platform
-    ekrealms = await ekresource_for_model(api.Realm)
+    ekrealms = await ekresource_for_model(ekclient, api.Realm)
     try:
         realm = await ekrealms.fetch(
             instance.spec.realm_name,
@@ -325,24 +340,25 @@ async def reconcile_tls_secret(name, namespace, **kwargs):
     """
     if not settings.dex.tls_secret:
         return
-    secrets = await ekclient.api("v1").resource("secrets")
-    initial, events = await secrets.watch_one(
-        settings.dex.tls_secret.name,
-        namespace = settings.dex.tls_secret.namespace
-    )
-    if initial:
-        _ = await secrets.patch(
-            name,
-            { "data": initial["data"] },
-            namespace = namespace
+    async with easykube_client() as ekclient:
+        secrets = await ekclient.api("v1").resource("secrets")
+        initial, events = await secrets.watch_one(
+            settings.dex.tls_secret.name,
+            namespace = settings.dex.tls_secret.namespace
         )
-    async for event in events:
-        # Ignore delete events and just leave the secret in place
-        if event["type"] == "DELETED":
-            return
-        if "object" in event:
+        if initial:
             _ = await secrets.patch(
                 name,
-                { "data": event["object"]["data"] },
+                { "data": initial["data"] },
                 namespace = namespace
             )
+        async for event in events:
+            # Ignore delete events and just leave the secret in place
+            if event["type"] == "DELETED":
+                return
+            if "object" in event:
+                _ = await secrets.patch(
+                    name,
+                    { "data": event["object"]["data"] },
+                    namespace = namespace
+                )

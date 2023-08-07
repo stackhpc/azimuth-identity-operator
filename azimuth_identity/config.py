@@ -160,8 +160,5 @@ class Configuration(BaseConfiguration):
     #: The Helm client configuration
     helm_client: HelmClientConfiguration = Field(default_factory = HelmClientConfiguration)
 
-    #: The maximum number of objects that can be processed at once
-    max_concurrency: conint(gt = 0) = 10
-
 
 settings = Configuration()

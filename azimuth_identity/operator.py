@@ -310,7 +310,7 @@ async def delete_platform(instance: api.Platform, **kwargs):
     await keycloak.remove_platform_group(realm_name, instance)
 
 
-@kopf.on.daemon(
+@kopf.daemon(
     "v1",
     "secrets",
     labels = { f"{settings.api_group}/tls-secret": kopf.PRESENT },

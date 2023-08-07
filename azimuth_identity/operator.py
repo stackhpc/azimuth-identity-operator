@@ -18,11 +18,8 @@ logger = logging.getLogger(__name__)
 
 # Create an easykube client from the environment
 from pydantic.json import pydantic_encoder
-ekclient = (
-    Configuration
-        .from_environment(json_encoder = pydantic_encoder)
-        .async_client(default_field_manager = settings.easykube_field_manager)
-)
+ekconfig = Configuration.from_environment(json_encoder = pydantic_encoder)
+ekclient = ekconfig.async_client(default_field_manager = settings.easykube_field_manager)
 
 
 # Create a registry of custom resources and populate it from the models module
@@ -99,8 +96,6 @@ def model_handler(model, register_fn, **kwargs):
     def decorator(func):
         @functools.wraps(func)
         async def handler(**handler_kwargs):
-            print(ekclient._transport._pool.connections)
-            print(keycloak.kc_client._transport._pool.connections)
             if "instance" not in handler_kwargs:
                 handler_kwargs["instance"] = model.parse_obj(handler_kwargs["body"])
             try:
@@ -315,36 +310,39 @@ async def delete_platform(instance: api.Platform, **kwargs):
     await keycloak.remove_platform_group(realm_name, instance)
 
 
-# @kopf.on.daemon(
-#     "v1",
-#     "secrets",
-#     labels = { f"{settings.api_group}/tls-secret": kopf.PRESENT },
-#     cancellation_timeout = 1
-# )
-# async def reconcile_tls_secret(name, namespace, **kwargs):
-#     """
-#     Reconciles the secret by copying the configured TLS secret.
-#     """
-#     if not settings.dex.tls_secret:
-#         return
-#     secrets = await ekclient.api("v1").resource("secrets")
-#     initial, events = await secrets.watch_one(
-#         settings.dex.tls_secret.name,
-#         namespace = settings.dex.tls_secret.namespace
-#     )
-#     if initial:
-#         _ = await secrets.patch(
-#             name,
-#             { "data": initial["data"] },
-#             namespace = namespace
-#         )
-#     async for event in events:
-#         # Ignore delete events and just leave the secret in place
-#         if event["type"] == "DELETED":
-#             return
-#         if "object" in event:
-#             _ = await secrets.patch(
-#                 name,
-#                 { "data": event["object"]["data"] },
-#                 namespace = namespace
-#             )
+@kopf.on.daemon(
+    "v1",
+    "secrets",
+    labels = { f"{settings.api_group}/tls-secret": kopf.PRESENT },
+    cancellation_timeout = 1
+)
+async def reconcile_tls_secret(name, namespace, **kwargs):
+    """
+    Reconciles the secret by copying the configured TLS secret.
+    """
+    if not settings.dex.tls_secret:
+        return
+    # Daemons get their own client to avoid choking the connection pool
+    client = ekconfig.async_client(default_field_manager = settings.easykube_field_manager)
+    async with client:
+        secrets = await client.api("v1").resource("secrets")
+        initial, events = await secrets.watch_one(
+            settings.dex.tls_secret.name,
+            namespace = settings.dex.tls_secret.namespace
+        )
+        if initial:
+            _ = await secrets.patch(
+                name,
+                { "data": initial["data"] },
+                namespace = namespace
+            )
+        async for event in events:
+            # Ignore delete events and just leave the secret in place
+            if event["type"] == "DELETED":
+                return
+            if "object" in event:
+                _ = await secrets.patch(
+                    name,
+                    { "data": event["object"]["data"] },
+                    namespace = namespace
+                )

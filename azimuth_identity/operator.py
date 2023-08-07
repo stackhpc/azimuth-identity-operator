@@ -99,7 +99,7 @@ def model_handler(model, register_fn, **kwargs):
     def decorator(func):
         @functools.wraps(func)
         async def handler(**handler_kwargs):
-            print(handler_kwargs["ekclient"]._transport._pool.connections)
+            print(ekclient._transport._pool.connections)
             print(keycloak.kc_client._transport._pool.connections)
             if "instance" not in handler_kwargs:
                 handler_kwargs["instance"] = model.parse_obj(handler_kwargs["body"])

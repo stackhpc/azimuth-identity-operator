@@ -1,17 +1,9 @@
-import base64
-import contextlib
-import copy
-import datetime as dt
 import functools
-import hashlib
 import json
 import logging
 import sys
-import typing as t
 
 import kopf
-import httpx
-import yaml
 
 from easykube import Configuration, ApiError
 from kube_custom_resource import CustomResourceRegistry
@@ -26,11 +18,8 @@ logger = logging.getLogger(__name__)
 
 # Create an easykube client from the environment
 from pydantic.json import pydantic_encoder
-ekclient = (
-    Configuration
-        .from_environment(json_encoder = pydantic_encoder)
-        .async_client(default_field_manager = settings.easykube_field_manager)
-)
+ekconfig = Configuration.from_environment(json_encoder = pydantic_encoder)
+ekclient = ekconfig.async_client(default_field_manager = settings.easykube_field_manager)
 
 
 # Create a registry of custom resources and populate it from the models module
@@ -58,6 +47,7 @@ async def apply_settings(**kwargs):
     except Exception:
         logger.exception("error applying CRDs - exiting")
         sys.exit(1)
+    await keycloak.init_client()
 
 
 @kopf.on.cleanup()
@@ -66,6 +56,7 @@ async def on_cleanup(**kwargs):
     Runs on operator shutdown.
     """
     await ekclient.aclose()
+    await keycloak.close_client()
 
 
 async def ekresource_for_model(model, subresource = None):
@@ -133,17 +124,15 @@ async def reconcile_realm(instance: api.Realm, **kwargs):
     realm_name = keycloak.realm_name(instance)
     # Ensure that the Dex instance for the realm exists
     dex_client = await dex.ensure_realm_instance(ekclient, instance, realm_name)
-    # Configure the Keycloak realm
-    async with keycloak.admin_client() as kc_client:
-        # Create the realm
-        await keycloak.ensure_realm(kc_client, realm_name)
-        # Create and wire up the admins and platform users group
-        await keycloak.ensure_admins_group(kc_client, realm_name)
-        await keycloak.ensure_platform_users_group(kc_client, realm_name)
-        # Create and wire up the identity provider for Dex
-        await keycloak.ensure_identity_provider(kc_client, instance, realm_name, dex_client)
-        # Create the groups scope
-        await keycloak.ensure_groups_scope(kc_client, instance, realm_name)
+    # Create the realm
+    await keycloak.ensure_realm(realm_name)
+    # Create and wire up the admins and platform users group
+    await keycloak.ensure_admins_group(realm_name)
+    await keycloak.ensure_platform_users_group(realm_name)
+    # Create and wire up the identity provider for Dex
+    await keycloak.ensure_identity_provider(instance, realm_name, dex_client)
+    # Create the groups scope
+    await keycloak.ensure_groups_scope(instance, realm_name)
     instance.status.phase = api.RealmPhase.READY
     issuer_url = f"{settings.keycloak.base_url}/realms/{realm_name}"
     instance.status.oidc_issuer_url = issuer_url
@@ -163,13 +152,7 @@ async def delete_realm(instance: api.Realm, **kwargs):
     await dex.delete_realm_instance(instance)
     # Remove the realm from Keycloak
     realm_name = keycloak.realm_name(instance)
-    async with keycloak.admin_client() as client:
-        try:
-            await client.delete(f"/{realm_name}")
-        except httpx.HTTPStatusError as exc:
-            # Not found is fine - it means the realm doesn't exist
-            if exc.response.status_code != 404:
-                raise
+    await keycloak.remove_realm(realm_name)
 
 
 @model_handler(api.Platform, kopf.on.create, param = "CREATE")
@@ -209,84 +192,81 @@ async def reconcile_platform(instance: api.Platform, param, **kwargs):
             delay = 10
         )
     realm_name = keycloak.realm_name(realm)
-    async with keycloak.admin_client() as kc_client:
-        # Create a group for the platform
-        # Because realms and platforms are both namespace-scoped, we know that the the
-        # platform name will be unique within the realm
-        group = await keycloak.ensure_platform_group(kc_client, realm_name, instance)
-        # For each Zenith service, ensure that a client exists and update the discovery secret
-        for service_name, service in instance.spec.zenith_services.items():
-            # Create a subgroup
-            subgroup = await keycloak.ensure_platform_service_subgroup(
-                kc_client,
-                realm_name,
-                group,
-                service_name
-            )
-            # Create a client
-            client = await keycloak.ensure_platform_service_client(
-                kc_client,
-                realm_name,
-                instance,
-                service_name,
-                service
-            )
-            # Write discovery information for Zenith
-            await ekclient.apply_object(
-                {
-                    "apiVersion": "v1",
-                    "kind": "Secret",
-                    "metadata": {
-                        "name": settings.keycloak.zenith_discovery_secret_name_template.format(
-                            subdomain = service.subdomain
-                        ),
-                        "namespace": settings.keycloak.zenith_discovery_namespace,
-                        "labels": {
-                            "app.kubernetes.io/managed-by": "azimuth-identity-operator",
-                            f"{settings.api_group}/platform-namespace": instance.metadata.namespace,
-                            f"{settings.api_group}/platform-name": instance.metadata.name,
-                            f"{settings.api_group}/service-name": service_name,
-                            f"{settings.api_group}/subdomain": service.subdomain,
-                        },
-                    },
-                    "stringData": {
-                        "issuer-url": realm.status.oidc_issuer_url,
-                        "client-id": client["clientId"],
-                        "client-secret": client["secret"],
-                        "allowed-groups": json.dumps([
-                            # We allow the platform users group
-                            f"/{settings.keycloak.platform_users_group_name}",
-                            # Allow the parent group for all services
-                            group["path"],
-                            # Allow users to be added to a subgroup for the specific service
-                            subgroup["path"],
-                        ]),
+    # Create a group for the platform
+    # Because realms and platforms are both namespace-scoped, we know that the the
+    # platform name will be unique within the realm
+    group = await keycloak.ensure_platform_group(realm_name, instance)
+    # For each Zenith service, ensure that a client exists and update the discovery secret
+    for service_name, service in instance.spec.zenith_services.items():
+        # Create a subgroup
+        subgroup = await keycloak.ensure_platform_service_subgroup(
+            realm_name,
+            group,
+            service_name
+        )
+        # Create a client
+        client = await keycloak.ensure_platform_service_client(
+            realm_name,
+            instance,
+            service_name,
+            service
+        )
+        # Write discovery information for Zenith
+        await ekclient.apply_object(
+            {
+                "apiVersion": "v1",
+                "kind": "Secret",
+                "metadata": {
+                    "name": settings.keycloak.zenith_discovery_secret_name_template.format(
+                        subdomain = service.subdomain
+                    ),
+                    "namespace": settings.keycloak.zenith_discovery_namespace,
+                    "labels": {
+                        "app.kubernetes.io/managed-by": "azimuth-identity-operator",
+                        f"{settings.api_group}/platform-namespace": instance.metadata.namespace,
+                        f"{settings.api_group}/platform-name": instance.metadata.name,
+                        f"{settings.api_group}/service-name": service_name,
+                        f"{settings.api_group}/subdomain": service.subdomain,
                     },
                 },
-                force = True
-            )
-        # Delete all the Zenith discovery secrets belonging to this platform that
-        # correspond to subdomains that we no longer recognise
-        known_subdomains = { s.subdomain for s in instance.spec.zenith_services.values() }
-        eksecrets = await ekclient.api("v1").resource("secrets")
-        async for secret in eksecrets.list(
-            labels = {
-                "app.kubernetes.io/managed-by": "azimuth-identity-operator",
-                f"{settings.api_group}/platform-namespace": instance.metadata.namespace,
-                f"{settings.api_group}/platform-name": instance.metadata.name,
+                "stringData": {
+                    "issuer-url": realm.status.oidc_issuer_url,
+                    "client-id": client["clientId"],
+                    "client-secret": client["secret"],
+                    "allowed-groups": json.dumps([
+                        # We allow the platform users group
+                        f"/{settings.keycloak.platform_users_group_name}",
+                        # Allow the parent group for all services
+                        group["path"],
+                        # Allow users to be added to a subgroup for the specific service
+                        subgroup["path"],
+                    ]),
+                },
             },
-            namespace = settings.keycloak.zenith_discovery_namespace
-        ):
-            secret_subdomain = secret.metadata.labels[f"{settings.api_group}/subdomain"]
-            if secret_subdomain not in known_subdomains:
-                await eksecrets.delete(
-                    secret.metadata.name,
-                    namespace = secret.metadata.namespace
-                )
-        # Delete all the clients belonging to services that we no longer recognise
-        await keycloak.prune_platform_service_clients(kc_client, realm_name, instance)
-        # Delete all the subgroups belonging to services that we no longer recognise
-        await keycloak.prune_platform_service_subgroups(kc_client, realm_name, instance, group)
+            force = True
+        )
+    # Delete all the Zenith discovery secrets belonging to this platform that
+    # correspond to subdomains that we no longer recognise
+    known_subdomains = { s.subdomain for s in instance.spec.zenith_services.values() }
+    eksecrets = await ekclient.api("v1").resource("secrets")
+    async for secret in eksecrets.list(
+        labels = {
+            "app.kubernetes.io/managed-by": "azimuth-identity-operator",
+            f"{settings.api_group}/platform-namespace": instance.metadata.namespace,
+            f"{settings.api_group}/platform-name": instance.metadata.name,
+        },
+        namespace = settings.keycloak.zenith_discovery_namespace
+    ):
+        secret_subdomain = secret.metadata.labels[f"{settings.api_group}/subdomain"]
+        if secret_subdomain not in known_subdomains:
+            await eksecrets.delete(
+                secret.metadata.name,
+                namespace = secret.metadata.namespace
+            )
+    # Delete all the clients belonging to services that we no longer recognise
+    await keycloak.prune_platform_service_clients(realm_name, instance)
+    # Delete all the subgroups belonging to services that we no longer recognise
+    await keycloak.prune_platform_service_subgroups(realm_name, instance, group)
     instance.status.phase = api.PlatformPhase.READY
     await save_instance_status(instance)
 
@@ -324,19 +304,13 @@ async def delete_platform(instance: api.Platform, **kwargs):
             raise
     realm: api.Realm = api.Realm.parse_obj(realm)
     realm_name = keycloak.realm_name(realm)
-    async with keycloak.admin_client() as kc_client:
-        # Remove the clients for all the services
-        await keycloak.prune_platform_service_clients(
-            kc_client,
-            realm_name,
-            instance,
-            all = True
-        )
-        # Remove the platform group
-        await keycloak.remove_platform_group(kc_client, realm_name, instance)
+    # Remove the clients for all the services
+    await keycloak.prune_platform_service_clients(realm_name, instance, all = True)
+    # Remove the platform group
+    await keycloak.remove_platform_group(realm_name, instance)
 
 
-@kopf.on.daemon(
+@kopf.daemon(
     "v1",
     "secrets",
     labels = { f"{settings.api_group}/tls-secret": kopf.PRESENT },
@@ -348,24 +322,27 @@ async def reconcile_tls_secret(name, namespace, **kwargs):
     """
     if not settings.dex.tls_secret:
         return
-    secrets = await ekclient.api("v1").resource("secrets")
-    initial, events = await secrets.watch_one(
-        settings.dex.tls_secret.name,
-        namespace = settings.dex.tls_secret.namespace
-    )
-    if initial:
-        _ = await secrets.patch(
-            name,
-            { "data": initial["data"] },
-            namespace = namespace
+    # Daemons get their own client to avoid choking the connection pool
+    client = ekconfig.async_client(default_field_manager = settings.easykube_field_manager)
+    async with client:
+        secrets = await client.api("v1").resource("secrets")
+        initial, events = await secrets.watch_one(
+            settings.dex.tls_secret.name,
+            namespace = settings.dex.tls_secret.namespace
         )
-    async for event in events:
-        # Ignore delete events and just leave the secret in place
-        if event["type"] == "DELETED":
-            return
-        if "object" in event:
+        if initial:
             _ = await secrets.patch(
                 name,
-                { "data": event["object"]["data"] },
+                { "data": initial["data"] },
                 namespace = namespace
             )
+        async for event in events:
+            # Ignore delete events and just leave the secret in place
+            if event["type"] == "DELETED":
+                return
+            if "object" in event:
+                _ = await secrets.patch(
+                    name,
+                    { "data": event["object"]["data"] },
+                    namespace = namespace
+                )

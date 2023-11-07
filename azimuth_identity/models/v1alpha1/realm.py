@@ -1,6 +1,4 @@
-import typing as t
-
-from pydantic import Extra, Field, AnyHttpUrl, constr
+from pydantic import Field
 
 from kube_custom_resource import CustomResource, schema
 
@@ -9,7 +7,7 @@ class RealmSpec(schema.BaseModel):
     """
     The spec for an Azimuth identity realm.
     """
-    tenancy_id: constr(min_length = 1) = Field(
+    tenancy_id: schema.constr(min_length = 1) = Field(
         ...,
         description = "The ID of the Azimuth tenancy that the realm is for."
     )
@@ -26,22 +24,19 @@ class RealmPhase(str, schema.Enum):
     FAILED   = "Failed"
 
 
-class RealmStatus(schema.BaseModel):
+class RealmStatus(schema.BaseModel, extra = "allow"):
     """
     The status of an Azimuth identity realm.
     """
-    class Config:
-        extra = Extra.allow
-
     phase: RealmPhase = Field(
         RealmPhase.UNKNOWN.value,
         description = "The phase of the realm."
     )
-    oidc_issuer_url: t.Optional[AnyHttpUrl] = Field(
+    oidc_issuer_url: schema.Optional[schema.AnyHttpUrl] = Field(
         None,
         description = "The OIDC issuer URL for the realm."
     )
-    admin_url: t.Optional[AnyHttpUrl] = Field(
+    admin_url: schema.Optional[schema.AnyHttpUrl] = Field(
         None,
         description = "The admin URL for the realm."
     )

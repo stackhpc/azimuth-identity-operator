@@ -80,7 +80,7 @@ async def save_instance_status(instance):
         {
             # Include the resource version for optimistic concurrency
             "metadata": { "resourceVersion": instance.metadata.resource_version },
-            "status": instance.status.dict(exclude_defaults = True),
+            "status": instance.status.model_dump(exclude_defaults = True),
         },
         namespace = instance.metadata.namespace
     )

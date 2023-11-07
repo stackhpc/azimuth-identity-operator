@@ -1,8 +1,13 @@
 import typing as t
 
-from pydantic import Field, AnyHttpUrl, FilePath, conint, constr, root_validator, validator
+from pydantic import TypeAdapter, Field, AnyHttpUrl, conint, constr
+from pydantic.functional_validators import AfterValidator
 
 from configomatic import Configuration as BaseConfiguration, Section, LoggingConfiguration
+
+
+HttpUrlAdapter = TypeAdapter(AnyHttpUrl)
+HttpUrl = t.Annotated[str, AfterValidator(lambda v: str(HttpUrlAdapter.validate_python(v)))]
 
 
 class SecretRef(Section):
@@ -20,7 +25,7 @@ class DexConfig(Section):
     Configuration for the Dex instances that authenticate with Azimuth.
     """
     #: The Helm chart repo, name and version to use for Dex instances
-    chart_repo: AnyHttpUrl = "https://charts.dexidp.io"
+    chart_repo: HttpUrl = "https://charts.dexidp.io"
     chart_name: constr(min_length = 1) = "dex"
     chart_version: constr(min_length = 1) = "0.13.0"
 
@@ -44,9 +49,9 @@ class DexConfig(Section):
     #: The default annotations for the ingress resources
     ingress_default_annotations: t.Dict[str, str] = Field(default_factory = dict)
     #: The auth URL to use for the ingress auth subrequest
-    ingress_auth_url: AnyHttpUrl
+    ingress_auth_url: HttpUrl
     #: The URL that unauthenticated users should be redirected to to sign in
-    ingress_auth_signin_url: t.Optional[AnyHttpUrl] = None
+    ingress_auth_signin_url: t.Optional[HttpUrl] = None
     #: The HTTP parameter to put the next URL in when redirecting to sign in
     ingress_auth_signin_redirect_param: str = "next"
 
@@ -56,12 +61,19 @@ class DexConfig(Section):
     keycloak_client_secret_bytes: conint(gt = 0) = 64
 
 
+def strip_trailing_slash(v: str) -> str:
+    """
+    Strips trailing slashes from the given string.
+    """
+    return v.rstrip("/")
+
+
 class KeycloakConfig(Section):
     """
     Configuration for the target Keycloak instance.
     """
     #: The base URL of the Keycloak instance
-    base_url: AnyHttpUrl
+    base_url: t.Annotated[HttpUrl, AfterValidator(strip_trailing_slash)]
 
     #: The client ID to use when authenticating with Keycloak
     client_id: constr(min_length = 1)
@@ -102,13 +114,6 @@ class KeycloakConfig(Section):
         default_factory = lambda: { "realm-management": ["realm-admin"] }
     )
 
-    @validator("base_url")
-    def validate_base_url(cls, v):
-        """
-        Strips trailing slashes from the base URL if present.
-        """
-        return v.rstrip("/")
-
 
 class HelmClientConfiguration(Section):
     """
@@ -129,15 +134,15 @@ class HelmClientConfiguration(Section):
     unpack_directory: t.Optional[str] = None
 
 
-class Configuration(BaseConfiguration):
+class Configuration(
+    BaseConfiguration,
+    default_path = "/etc/azimuth/identity-operator.yaml",
+    path_env_var = "AZIMUTH_IDENTITY_CONFIG",
+    env_prefix = "AZIMUTH_IDENTITY"
+):
     """
     Top-level configuration model.
     """
-    class Config:
-        default_path = "/etc/azimuth/identity-operator.yaml"
-        path_env_var = "AZIMUTH_IDENTITY_CONFIG"
-        env_prefix = "AZIMUTH_IDENTITY"
-
     #: The logging configuration
     logging: LoggingConfiguration = Field(default_factory = LoggingConfiguration)
 

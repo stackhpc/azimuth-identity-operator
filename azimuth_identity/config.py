@@ -1,13 +1,16 @@
 import typing as t
 
-from pydantic import TypeAdapter, Field, AnyHttpUrl, conint, constr
+from pydantic import TypeAdapter, Field, AnyHttpUrl as PyAnyHttpUrl, conint, constr
 from pydantic.functional_validators import AfterValidator
 
 from configomatic import Configuration as BaseConfiguration, Section, LoggingConfiguration
 
 
-HttpUrlAdapter = TypeAdapter(AnyHttpUrl)
-HttpUrl = t.Annotated[str, AfterValidator(lambda v: str(HttpUrlAdapter.validate_python(v)))]
+#: Type for a string that validates as a URL
+AnyHttpUrl = t.Annotated[
+    str,
+    AfterValidator(lambda v: str(TypeAdapter(PyAnyHttpUrl).validate_python(v)))
+]
 
 
 class SecretRef(Section):
@@ -25,7 +28,7 @@ class DexConfig(Section):
     Configuration for the Dex instances that authenticate with Azimuth.
     """
     #: The Helm chart repo, name and version to use for Dex instances
-    chart_repo: HttpUrl = "https://charts.dexidp.io"
+    chart_repo: AnyHttpUrl = "https://charts.dexidp.io"
     chart_name: constr(min_length = 1) = "dex"
     chart_version: constr(min_length = 1) = "0.13.0"
 
@@ -49,9 +52,9 @@ class DexConfig(Section):
     #: The default annotations for the ingress resources
     ingress_default_annotations: t.Dict[str, str] = Field(default_factory = dict)
     #: The auth URL to use for the ingress auth subrequest
-    ingress_auth_url: HttpUrl
+    ingress_auth_url: AnyHttpUrl
     #: The URL that unauthenticated users should be redirected to to sign in
-    ingress_auth_signin_url: t.Optional[HttpUrl] = None
+    ingress_auth_signin_url: t.Optional[AnyHttpUrl] = None
     #: The HTTP parameter to put the next URL in when redirecting to sign in
     ingress_auth_signin_redirect_param: str = "next"
 
@@ -73,7 +76,7 @@ class KeycloakConfig(Section):
     Configuration for the target Keycloak instance.
     """
     #: The base URL of the Keycloak instance
-    base_url: t.Annotated[HttpUrl, AfterValidator(strip_trailing_slash)]
+    base_url: t.Annotated[AnyHttpUrl, AfterValidator(strip_trailing_slash)]
 
     #: The client ID to use when authenticating with Keycloak
     client_id: constr(min_length = 1)

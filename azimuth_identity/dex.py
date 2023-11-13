@@ -40,7 +40,7 @@ async def ensure_tls_secret(ekclient, realm: api.Realm):
             },
         },
     }
-    kopf.adopt(secret_data, realm.dict())
+    kopf.adopt(secret_data, realm.model_dump())
     eksecrets = await ekclient.api("v1").resource("secrets")
     _ = await eksecrets.create_or_patch(
         secret_name,
@@ -134,7 +134,7 @@ async def ensure_config_secret(
                 "config.yaml": yaml.safe_dump(next_config),
             },
         }
-        kopf.adopt(secret_data, realm.dict())
+        kopf.adopt(secret_data, realm.model_dump())
         _ = await eksecrets.create_or_patch(
             secret_name,
             secret_data,
@@ -209,7 +209,7 @@ async def ensure_ingresses(
             ],
         },
     }
-    kopf.adopt(ingress_data, realm.dict())
+    kopf.adopt(ingress_data, realm.model_dump())
     _ = await ekclient.apply_object(ingress_data, force = True)
     auth_annotations = {
         "nginx.ingress.kubernetes.io/auth-url": settings.dex.ingress_auth_url,
@@ -282,7 +282,7 @@ async def ensure_ingresses(
             ],
         },
     }
-    kopf.adopt(ingress_data, realm.dict())
+    kopf.adopt(ingress_data, realm.model_dump())
     _ = await ekclient.apply_object(ingress_data, force = True)
 
 

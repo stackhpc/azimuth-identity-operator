@@ -80,7 +80,7 @@ async def save_instance_status(instance):
         {
             # Include the resource version for optimistic concurrency
             "metadata": { "resourceVersion": instance.metadata.resource_version },
-            "status": instance.status.dict(exclude_defaults = True),
+            "status": instance.status.model_dump(exclude_defaults = True),
         },
         namespace = instance.metadata.namespace
     )
@@ -97,7 +97,7 @@ def model_handler(model, register_fn, **kwargs):
         @functools.wraps(func)
         async def handler(**handler_kwargs):
             if "instance" not in handler_kwargs:
-                handler_kwargs["instance"] = model.parse_obj(handler_kwargs["body"])
+                handler_kwargs["instance"] = model.model_validate(handler_kwargs["body"])
             try:
                 return await func(**handler_kwargs)
             except ApiError as exc:
@@ -185,7 +185,7 @@ async def reconcile_platform(instance: api.Platform, param, **kwargs):
             )
         else:
             raise
-    realm: api.Realm = api.Realm.parse_obj(realm)
+    realm: api.Realm = api.Realm.model_validate(realm)
     if realm.status.phase != api.RealmPhase.READY:
         raise kopf.TemporaryError(
             f"Realm '{instance.spec.realm_name}' is not yet ready",
@@ -302,7 +302,7 @@ async def delete_platform(instance: api.Platform, **kwargs):
             return
         else:
             raise
-    realm: api.Realm = api.Realm.parse_obj(realm)
+    realm: api.Realm = api.Realm.model_validate(realm)
     realm_name = keycloak.realm_name(realm)
     # Remove the clients for all the services
     await keycloak.prune_platform_service_clients(realm_name, instance, all = True)

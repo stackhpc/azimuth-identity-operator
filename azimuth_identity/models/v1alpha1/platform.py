@@ -1,6 +1,6 @@
 import typing as t
 
-from pydantic import Extra, Field, constr
+from pydantic import Field
 
 from kube_custom_resource import CustomResource, schema
 
@@ -9,11 +9,11 @@ class ZenithServiceSpec(schema.BaseModel):
     """
     The spec for a Zenith service.
     """
-    subdomain: constr(regex = r"[a-z0-9]+") = Field(
+    subdomain: schema.constr(pattern = r"[a-z0-9]+") = Field(
         ...,
         description = "The subdomain of the Zenith service."
     )
-    fqdn: constr(regex = r"[a-z0-9\.-]+") = Field(
+    fqdn: schema.constr(pattern = r"[a-z0-9\.-]+") = Field(
         ...,
         description = "The FQDN of the Zenith service."
     )
@@ -23,7 +23,7 @@ class PlatformSpec(schema.BaseModel):
     """
     The spec for an Azimuth identity platform.
     """
-    realm_name: t.Optional[constr(regex = r"[a-z0-9-]+")] = Field(
+    realm_name: schema.constr(pattern = r"[a-z0-9-]+") = Field(
         ...,
         description = "The name of the realm that the platform belongs to."
     )
@@ -47,13 +47,10 @@ class PlatformPhase(str, schema.Enum):
     FAILED   = "Failed"
 
 
-class PlatformStatus(schema.BaseModel):
+class PlatformStatus(schema.BaseModel, extra = "allow"):
     """
     The status of an Azimuth identity platform.
     """
-    class Config:
-        extra = Extra.allow
-
     phase: PlatformPhase = Field(
         PlatformPhase.UNKNOWN.value,
         description = "The phase of the platform."

@@ -1,8 +1,16 @@
 import typing as t
 
-from pydantic import Field, AnyHttpUrl, FilePath, conint, constr, root_validator, validator
+from pydantic import TypeAdapter, Field, AnyHttpUrl as PyAnyHttpUrl, conint, constr
+from pydantic.functional_validators import AfterValidator
 
 from configomatic import Configuration as BaseConfiguration, Section, LoggingConfiguration
+
+
+#: Type for a string that validates as a URL
+AnyHttpUrl = t.Annotated[
+    str,
+    AfterValidator(lambda v: str(TypeAdapter(PyAnyHttpUrl).validate_python(v)))
+]
 
 
 class SecretRef(Section):
@@ -56,12 +64,19 @@ class DexConfig(Section):
     keycloak_client_secret_bytes: conint(gt = 0) = 64
 
 
+def strip_trailing_slash(v: str) -> str:
+    """
+    Strips trailing slashes from the given string.
+    """
+    return v.rstrip("/")
+
+
 class KeycloakConfig(Section):
     """
     Configuration for the target Keycloak instance.
     """
     #: The base URL of the Keycloak instance
-    base_url: AnyHttpUrl
+    base_url: t.Annotated[AnyHttpUrl, AfterValidator(strip_trailing_slash)]
 
     #: The client ID to use when authenticating with Keycloak
     client_id: constr(min_length = 1)
@@ -102,13 +117,6 @@ class KeycloakConfig(Section):
         default_factory = lambda: { "realm-management": ["realm-admin"] }
     )
 
-    @validator("base_url")
-    def validate_base_url(cls, v):
-        """
-        Strips trailing slashes from the base URL if present.
-        """
-        return v.rstrip("/")
-
 
 class HelmClientConfiguration(Section):
     """
@@ -129,15 +137,15 @@ class HelmClientConfiguration(Section):
     unpack_directory: t.Optional[str] = None
 
 
-class Configuration(BaseConfiguration):
+class Configuration(
+    BaseConfiguration,
+    default_path = "/etc/azimuth/identity-operator.yaml",
+    path_env_var = "AZIMUTH_IDENTITY_CONFIG",
+    env_prefix = "AZIMUTH_IDENTITY"
+):
     """
     Top-level configuration model.
     """
-    class Config:
-        default_path = "/etc/azimuth/identity-operator.yaml"
-        path_env_var = "AZIMUTH_IDENTITY_CONFIG"
-        env_prefix = "AZIMUTH_IDENTITY"
-
     #: The logging configuration
     logging: LoggingConfiguration = Field(default_factory = LoggingConfiguration)
 

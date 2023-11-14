@@ -1,0 +1,126 @@
+# This workflow proposes updates to the dependencies that dependabot cannot
+name: Update dependencies
+
+on:
+  # Allow manual executions
+  workflow_dispatch:
+  # Run nightly
+  schedule:
+    - cron: '0 0 * * *'
+
+jobs:
+  propose_helm_update:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+
+      - name: Check for most recent Helm version
+        id: next
+        uses: stackhpc/github-actions/github-latest-release@master
+        with:
+          repository: helm/helm
+
+      - name: Update dependency key
+        uses: stackhpc/github-actions/config-update@master
+        with:
+          path: ./.github/workflows/build-push-artifacts.yaml
+          updates: |
+            env.HELM_VERSION=${{ steps.next.outputs.version }}
+
+      - name: Generate app token for PR
+        uses: stackhpc/github-actions/generate-app-token@master
+        id: generate-app-token
+        with:
+          repository: ${{ github.repository }}
+          app-id: ${{ secrets.APP_ID }}
+          app-private-key: ${{ secrets.APP_PRIVATE_KEY }}
+
+      - name: Propose changes via PR if required
+        uses: peter-evans/create-pull-request@v5
+        with:
+          token: ${{ steps.generate-app-token.outputs.token }}
+          commit-message: >-
+            Update Helm to ${{ steps.next.outputs.version }}
+          branch: update-dependency/helm
+          delete-branch: true
+          title: >-
+            Update Helm to ${{ steps.next.outputs.version }}
+          body: >
+            This PR was created automatically to update
+            Helm to ${{ steps.next.outputs.version }}.
+          labels: |
+            automation
+            dependency-update
+
+  propose_helm_chart_updates:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          # The baked in Dex chart
+          - key: dex
+            path: ./.github/workflows/build-push-artifacts.yaml
+            chart_name_jsonpath: env.DEX_CHART_NAME
+            chart_repo_jsonpath: env.DEX_CHART_REPO
+            chart_version_jsonpath: env.DEX_CHART_VERSION
+
+          # The kube-state-metrics chart from the Helm dependencies
+          - key: kube-state-metrics
+            path: ./chart/Chart.yaml
+            chart_name_jsonpath: dependencies[0].name
+            chart_repo_jsonpath: dependencies[0].repository
+            chart_version_jsonpath: dependencies[0].version
+
+    name: ${{ matrix.key }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+
+      - name: Extract repo and chart
+        id: chart-info
+        uses: stackhpc/github-actions/config-extract@master
+        with:
+          path: ${{ matrix.path }}
+          outputs: |
+            repo=${{ matrix.chart_repo_jsonpath }}
+            name=${{ matrix.chart_name_jsonpath }}
+
+      - name: Check for updates
+        id: next
+        uses: stackhpc/github-actions/helm-latest-version@master
+        with:
+          repository: ${{ steps.chart-info.outputs.repo }}
+          chart: ${{ steps.chart-info.outputs.name }}
+
+      - name: Update chart version
+        uses: stackhpc/github-actions/config-update@master
+        with:
+          path: ${{ matrix.path }}
+          updates: |
+            ${{ matrix.chart_version_jsonpath }}=${{ steps.next.outputs.version }}
+
+      - name: Generate app token for PR
+        uses: stackhpc/github-actions/generate-app-token@master
+        id: generate-app-token
+        with:
+          repository: ${{ github.repository }}
+          app-id: ${{ secrets.APP_ID }}
+          app-private-key: ${{ secrets.APP_PRIVATE_KEY }}
+
+      - name: Propose changes via PR if required
+        uses: peter-evans/create-pull-request@v5
+        with:
+          token: ${{ steps.generate-app-token.outputs.token }}
+          commit-message: >-
+            Update ${{ matrix.key }} to ${{ steps.next.outputs.version }}
+          branch: update-dependency/${{ matrix.key }}
+          delete-branch: true
+          title: >-
+            Update ${{ matrix.key }} to ${{ steps.next.outputs.version }}
+          body: >
+            This PR was created automatically to update
+            ${{ matrix.key }} to ${{ steps.next.outputs.version }}.
+          labels: |
+            automation
+            dependency-update

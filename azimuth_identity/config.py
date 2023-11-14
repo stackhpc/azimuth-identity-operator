@@ -28,9 +28,10 @@ class DexConfig(Section):
     Configuration for the Dex instances that authenticate with Azimuth.
     """
     #: The Helm chart repo, name and version to use for Dex instances
-    chart_repo: AnyHttpUrl = "https://charts.dexidp.io"
-    chart_name: constr(min_length = 1) = "dex"
-    chart_version: constr(min_length = 1) = "0.13.0"
+    #: By default, this points to a local pull of the chart that is baked into the Docker image
+    chart_name: constr(min_length = 1) = "/charts/dex"
+    chart_repo: t.Optional[AnyHttpUrl] = None
+    chart_version: t.Optional[constr(min_length = 1)] = None
 
     #: Default Helm values to merge with calculated values for Dex releases
     default_values: t.Dict[str, t.Any] = Field(default_factory = dict)

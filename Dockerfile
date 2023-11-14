@@ -4,7 +4,7 @@ RUN apt-get update && \
     apt-get install -y curl && \
     rm -rf /var/lib/apt/lists/*
 
-ARG HELM_VERSION=v3.13.2
+ARG HELM_VERSION
 RUN set -ex; \
     OS_ARCH="$(uname -m)"; \
     case "$OS_ARCH" in \
@@ -17,9 +17,10 @@ RUN set -ex; \
     helm version
 
 # Pull and unpack the Dex chart
-ARG DEX_CHART_REPO=https://charts.dexidp.io
-ARG DEX_CHART_VERSION=0.13.0
-RUN helm pull dex \
+ARG DEX_CHART_NAME
+ARG DEX_CHART_REPO
+ARG DEX_CHART_VERSION
+RUN helm pull ${DEX_CHART_NAME} \
       --repo ${DEX_CHART_REPO} \
       --version ${DEX_CHART_VERSION} \
       --untar \

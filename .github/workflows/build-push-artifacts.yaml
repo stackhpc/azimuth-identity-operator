@@ -15,6 +15,13 @@ on:
         description: The chart version that was published
         value: ${{ jobs.build_push_chart.outputs.chart-version }}
 
+# Variables controlling the dependencies that are baked in to the image
+env:
+  HELM_VERSION: v3.13.2
+  DEX_CHART_NAME: dex
+  DEX_CHART_REPO: https://charts.dexidp.io
+  DEX_CHART_VERSION: 0.13.0
+
 jobs:
   build_push_images:
     name: Build and push images
@@ -47,6 +54,11 @@ jobs:
           cache-key: azimuth-identity-operator
           context: .
           platforms: linux/amd64,linux/arm64
+          build-args: |
+            HELM_VERSION=${{ env.HELM_VERSION }}
+            DEX_CHART_NAME=${{ env.DEX_CHART_NAME }}
+            DEX_CHART_REPO=${{ env.DEX_CHART_REPO }}
+            DEX_CHART_VERSION=${{ env.DEX_CHART_VERSION }}
           push: true
           tags: ${{ steps.image-meta.outputs.tags }}
           labels: ${{ steps.image-meta.outputs.labels }}

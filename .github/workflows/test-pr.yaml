@@ -1,7 +1,8 @@
 name: Test Azimuth deployment
 
 on:
-  pull_request:
+  # We use pull_request_target so that dependabot-created workflows can run
+  pull_request_target:
     types:
       - opened
       - synchronize
@@ -20,11 +21,14 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: PR must be from a branch in the stackhpc/azimuth-identity-operator repo
-        run: exit ${{ github.repository == 'stackhpc/azimuth-identity-operator' && '0' || '1' }}
+        run: exit ${{ github.event.pull_request.head.repo.full_name == 'stackhpc/azimuth-identity-operator' && '0' || '1' }}
 
   publish_artifacts:
     needs: [fail_on_remote]
     uses: ./.github/workflows/build-push-artifacts.yaml
+    with:
+      ref: ${{ github.event.pull_request.head.sha }}
+    secrets: inherit
 
   run_azimuth_tests:
     needs: [publish_artifacts]

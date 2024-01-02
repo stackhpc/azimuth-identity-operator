@@ -24,9 +24,9 @@ jobs:
       - name: Update dependency key
         uses: stackhpc/github-actions/config-update@master
         with:
-          path: ./.github/workflows/build-push-artifacts.yaml
+          path: ./Dockerfile
           updates: |
-            env.HELM_VERSION=${{ steps.next.outputs.version }}
+            HELM_VERSION=${{ steps.next.outputs.version }}
 
       - name: Generate app token for PR
         uses: stackhpc/github-actions/generate-app-token@master
@@ -60,10 +60,10 @@ jobs:
         include:
           # The baked in Dex chart
           - key: dex
-            path: ./.github/workflows/build-push-artifacts.yaml
-            chart_name_jsonpath: env.DEX_CHART_NAME
-            chart_repo_jsonpath: env.DEX_CHART_REPO
-            chart_version_jsonpath: env.DEX_CHART_VERSION
+            path: ./Dockerfile
+            chart_name_jsonpath: DEX_CHART_NAME
+            chart_repo_jsonpath: DEX_CHART_REPO
+            chart_version_jsonpath: DEX_CHART_VERSION
 
           # The kube-state-metrics chart from the Helm dependencies
           - key: kube-state-metrics

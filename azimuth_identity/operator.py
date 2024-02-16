@@ -50,6 +50,8 @@ async def apply_settings(**kwargs):
         except Exception:
             logger.exception("error applying CRD %s.%s - exiting", crd.plural_name, crd.api_group)
             sys.exit(1)
+    # Give Kubernetes a chance to create the APIs for the CRDs
+    await asyncio.sleep(0.5)
     # Check to see if the APIs for the CRDs are up
     # If they are not, the kopf watches will not start properly so we exit and get restarted
     for crd in registry:

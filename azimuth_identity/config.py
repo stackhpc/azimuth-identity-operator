@@ -160,6 +160,9 @@ class Configuration(
     #: The field manager name to use for server-side apply
     easykube_field_manager: constr(min_length = 1) = "azimuth-identity-operator"
 
+    #: The amount of time (seconds) before a watch is forcefully restarted
+    watch_timeout: conint(gt = 0) = 600
+
     #: Configuration for Dex instances
     dex: DexConfig
 

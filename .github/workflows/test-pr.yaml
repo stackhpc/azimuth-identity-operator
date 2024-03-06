@@ -55,6 +55,7 @@ jobs:
         with:
           os-clouds: ${{ secrets.OS_CLOUDS }}
           environment-prefix: identity-ci
+          target-cloud: ${{ vars.TARGET_CLOUD }}
           # Use the version of the chart that we just built
           # We also don't need all the tests
           # The workstation is sufficient to test that the OIDC discovery is working

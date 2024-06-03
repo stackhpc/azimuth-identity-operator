@@ -14,7 +14,7 @@ from .config import settings
 from .models import v1alpha1 as api
 
 
-logger = logging.getLogger(__name__)
+LOGGER = logging.getLogger(__name__)
 
 
 # Create an easykube client from the environment
@@ -48,19 +48,20 @@ async def apply_settings(**kwargs):
         try:
             await ekclient.apply_object(crd.kubernetes_resource(), force = True)
         except Exception:
-            logger.exception("error applying CRD %s.%s - exiting", crd.plural_name, crd.api_group)
+            LOGGER.exception("error applying CRD %s.%s - exiting", crd.plural_name, crd.api_group)
             sys.exit(1)
     # Give Kubernetes a chance to create the APIs for the CRDs
     await asyncio.sleep(0.5)
     # Check to see if the APIs for the CRDs are up
     # If they are not, the kopf watches will not start properly so we exit and get restarted
+    LOGGER.info("Waiting for CRDs to become available")
     for crd in registry:
         preferred_version = next(k for k, v in crd.versions.items() if v.storage)
         api_version = f"{crd.api_group}/{preferred_version}"
         try:
             _ = await ekclient.get(f"/apis/{api_version}/{crd.plural_name}")
         except Exception:
-            logger.exception(
+            LOGGER.exception(
                 "api for %s.%s not available - exiting",
                 crd.plural_name,
                 crd.api_group
@@ -74,8 +75,19 @@ async def on_cleanup(**kwargs):
     """
     Runs on operator shutdown.
     """
+    LOGGER.info("Closing Kubernetes and Keycloak clients")
     await ekclient.aclose()
     await keycloak.close_client()
+
+
+def format_instance(instance):
+    """
+    Formats an instance for logging.
+    """
+    if instance.metadata.name == instance.metadata.namespace:
+        return instance.metadata.name
+    else:
+        return f"{instance.metadata.namespace}/{instance.metadata.name}"
 
 
 async def ekresource_for_model(model, subresource = None):
@@ -138,6 +150,7 @@ async def reconcile_realm(instance: api.Realm, **kwargs):
     """
     if instance.status.phase == api.RealmPhase.UNKNOWN:
         instance.status.phase = api.RealmPhase.PENDING
+        LOGGER.info("Updating realm status to PENDING - %s", format_instance(instance))
         await save_instance_status(instance)
     # Derive the realm name from the realm instance
     realm_name = keycloak.realm_name(instance)
@@ -145,6 +158,8 @@ async def reconcile_realm(instance: api.Realm, **kwargs):
     dex_client = await dex.ensure_realm_instance(ekclient, instance, realm_name)
     # Create the realm
     await keycloak.ensure_realm(realm_name)
+    # Make sure that the profile requirements for the realm are set up correctly
+    await keycloak.ensure_user_profile_config(realm_name)
     # Create and wire up the admins and platform users group
     await keycloak.ensure_admins_group(realm_name)
     await keycloak.ensure_platform_users_group(realm_name)
@@ -156,6 +171,7 @@ async def reconcile_realm(instance: api.Realm, **kwargs):
     issuer_url = f"{settings.keycloak.base_url}/realms/{realm_name}"
     instance.status.oidc_issuer_url = issuer_url
     instance.status.admin_url = f"{settings.keycloak.base_url}/admin/{realm_name}/console"
+    LOGGER.info("Realm reconciled successfully, saving status - %s", format_instance(instance))
     await save_instance_status(instance)
 
 
@@ -166,12 +182,14 @@ async def delete_realm(instance: api.Realm, **kwargs):
     """
     if instance.status.phase != api.RealmPhase.DELETING:
         instance.status.phase = api.RealmPhase.DELETING
+        LOGGER.info("Updating realm status to DELETING - %s", format_instance(instance))
         await save_instance_status(instance)
     # Delete the Dex instance
     await dex.delete_realm_instance(instance)
     # Remove the realm from Keycloak
     realm_name = keycloak.realm_name(instance)
     await keycloak.remove_realm(realm_name)
+    LOGGER.info("Realm deleted successfully - %s", format_instance(instance))
 
 
 @model_handler(api.Platform, kopf.on.create, param = "CREATE")
@@ -184,12 +202,15 @@ async def reconcile_platform(instance: api.Platform, param, **kwargs):
     # Acknowledge the platform at the earliest opportunity
     if instance.status.phase == api.PlatformPhase.UNKNOWN:
         instance.status.phase = api.PlatformPhase.PENDING
+        LOGGER.info("Updating platform status to PENDING - %s", format_instance(instance))
         await save_instance_status(instance)
     # If the spec has changed, put the platform into the updating phase
     if param == "UPDATE":
         instance.status.phase = api.PlatformPhase.UPDATING
+        LOGGER.info("Updating platform status to UPDATING - %s", format_instance(instance))
         await save_instance_status(instance)
     # First, get the realm for the platform and wait for it to become ready
+    LOGGER.info("Fetching realm for platform - %s", format_instance(instance))
     ekrealms = await ekresource_for_model(api.Realm)
     try:
         realm = await ekrealms.fetch(
@@ -231,6 +252,11 @@ async def reconcile_platform(instance: api.Platform, param, **kwargs):
             service
         )
         # Write discovery information for Zenith
+        LOGGER.info(
+            "Creating/updating Zenith OIDC discovery secret - %s/%s",
+            format_instance(instance),
+            service_name
+        )
         await ekclient.apply_object(
             {
                 "apiVersion": "v1",
@@ -278,6 +304,11 @@ async def reconcile_platform(instance: api.Platform, param, **kwargs):
     ):
         secret_subdomain = secret.metadata.labels[f"{settings.api_group}/subdomain"]
         if secret_subdomain not in known_subdomains:
+            LOGGER.info(
+                "Pruning Zenith discovery secret for unrecognised service - %s/%s",
+                format_instance(instance),
+                secret.metadata.labels[f"{settings.api_group}/service-name"]
+            )
             await eksecrets.delete(
                 secret.metadata.name,
                 namespace = secret.metadata.namespace
@@ -287,6 +318,7 @@ async def reconcile_platform(instance: api.Platform, param, **kwargs):
     # Delete all the subgroups belonging to services that we no longer recognise
     await keycloak.prune_platform_service_subgroups(realm_name, instance, group)
     instance.status.phase = api.PlatformPhase.READY
+    LOGGER.info("Platform reconciled successfully, saving status - %s", format_instance(instance))
     await save_instance_status(instance)
 
 
@@ -297,8 +329,10 @@ async def delete_platform(instance: api.Platform, **kwargs):
     """
     if instance.status.phase != api.PlatformPhase.DELETING:
         instance.status.phase = api.PlatformPhase.DELETING
+        LOGGER.info("Updating platform status to DELETING - %s", format_instance(instance))
         await save_instance_status(instance)
     # First, delete the Zenith discovery secrets
+    LOGGER.info("Deleting Zenith discovery secrets - %s", format_instance(instance))
     secrets = await ekclient.api("v1").resource("secrets")
     await secrets.delete_all(
         labels = {
@@ -345,11 +379,17 @@ async def reconcile_tls_secret(name, namespace, **kwargs):
     client = ekconfig.async_client(default_field_manager = settings.easykube_field_manager)
     async with client:
         secrets = await client.api("v1").resource("secrets")
+        LOGGER.info(
+            "Watching TLS secret for changes - %s/%s",
+            settings.dex.tls_secret.namespace,
+            settings.dex.tls_secret.name
+        )
         initial, events = await secrets.watch_one(
             settings.dex.tls_secret.name,
             namespace = settings.dex.tls_secret.namespace
         )
         if initial:
+            LOGGER.info("Patching TLS mirror secret - %s/%s", namespace, name)
             _ = await secrets.patch(
                 name,
                 { "data": initial["data"] },
@@ -360,6 +400,7 @@ async def reconcile_tls_secret(name, namespace, **kwargs):
             if event["type"] == "DELETED":
                 return
             if "object" in event:
+                LOGGER.info("Patching TLS mirror secret - %s/%s", namespace, name)
                 _ = await secrets.patch(
                     name,
                     { "data": event["object"]["data"] },

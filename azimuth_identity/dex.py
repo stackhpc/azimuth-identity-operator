@@ -1,5 +1,6 @@
 import base64
 import hashlib
+import logging
 import secrets
 import typing as t
 
@@ -11,6 +12,19 @@ import pyhelm3
 
 from .config import settings
 from .models import v1alpha1 as api
+
+
+LOGGER = logging.getLogger(__name__)
+
+
+def format_realm(realm: api.Realm):
+    """
+    Formats a realm for a log record.
+    """
+    if realm.metadata.name == realm.metadata.namespace:
+        return realm.metadata.name
+    else:
+        return f"{realm.metadata.namespace}/{realm.metadata.name}"
 
 
 def path_prefix(realm: api.Realm, keycloak_realm_name: str):
@@ -42,6 +56,7 @@ async def ensure_tls_secret(ekclient, realm: api.Realm):
     }
     kopf.adopt(secret_data, realm.model_dump())
     eksecrets = await ekclient.api("v1").resource("secrets")
+    LOGGER.info("Creating/updating TLS secret - %s", format_realm(realm))
     _ = await eksecrets.create_or_patch(
         secret_name,
         secret_data,
@@ -67,16 +82,21 @@ async def ensure_config_secret(
         secret = await eksecrets.fetch(secret_name, namespace = realm.metadata.namespace)
     except easykube.ApiError as exc:
         if exc.status_code == 404:
+            LOGGER.info("No existing Dex config - %s", format_realm(realm))
             existing_config = {}
         else:
             raise
     else:
+        LOGGER.info("Found existing Dex config - %s", format_realm(realm))
         existing_config = yaml.safe_load(base64.b64decode(secret.data["config.yaml"]).decode())
     # Get the existing client secret, if there is one
     try:
         client_secret = existing_config["staticClients"][0]["secret"]
     except (KeyError, IndexError):
+        LOGGER.info("Generating client secret for Keycloak - %s", format_realm(realm))
         client_secret = secrets.token_urlsafe(settings.dex.keycloak_client_secret_bytes)
+    else:
+        LOGGER.info("Using existing client secret for Keycloak - %s", format_realm(realm))
     # Build the OIDC client config for Keycloak
     client = {
         "name": "Keycloak",
@@ -135,6 +155,7 @@ async def ensure_config_secret(
             },
         }
         kopf.adopt(secret_data, realm.model_dump())
+        LOGGER.info("Creating/updating Dex config secret - %s", format_realm(realm))
         _ = await eksecrets.create_or_patch(
             secret_name,
             secret_data,
@@ -210,6 +231,7 @@ async def ensure_ingresses(
         },
     }
     kopf.adopt(ingress_data, realm.model_dump())
+    LOGGER.info("Creating main ingress for Dex - %s", format_realm(realm))
     _ = await ekclient.apply_object(ingress_data, force = True)
     auth_annotations = {
         "nginx.ingress.kubernetes.io/auth-url": settings.dex.ingress_auth_url,
@@ -283,6 +305,7 @@ async def ensure_ingresses(
         },
     }
     kopf.adopt(ingress_data, realm.model_dump())
+    LOGGER.info("Creating authenticated ingress for Dex callback - %s", format_realm(realm))
     _ = await ekclient.apply_object(ingress_data, force = True)
 
 
@@ -310,6 +333,7 @@ async def ensure_realm_instance(ekclient, realm: api.Realm, keycloak_realm_name:
         insecure_skip_tls_verify = settings.helm_client.insecure_skip_tls_verify,
         unpack_directory = settings.helm_client.unpack_directory
     )
+    LOGGER.info("Installing Dex release - %s", format_realm(realm))
     await helm_client.ensure_release(
         f"{realm.metadata.name}-dex",
         await helm_client.get_chart(
@@ -351,6 +375,7 @@ async def delete_realm_instance(realm: api.Realm):
         insecure_skip_tls_verify = settings.helm_client.insecure_skip_tls_verify,
         unpack_directory = settings.helm_client.unpack_directory
     )
+    LOGGER.info("Deleting Dex release - %s", format_realm(realm))
     _ = await helm_client.uninstall_release(
         f"{realm.metadata.name}-dex",
         namespace = realm.metadata.namespace

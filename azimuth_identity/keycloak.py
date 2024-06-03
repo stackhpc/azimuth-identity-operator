@@ -11,7 +11,7 @@ from .config import settings
 from .models import v1alpha1 as api
 
 
-logger = logging.getLogger(__name__)
+LOGGER = logging.getLogger(__name__)
 
 
 class Auth(httpx.Auth):
@@ -34,6 +34,7 @@ class Auth(httpx.Auth):
             # to acquire the lock, there is nothing for us to do
             # Otherwise, fetch a new token
             if self._token == token:
+                LOGGER.info("Refreshing Keycloak admin token")
                 response = await self._client.post(
                     self._token_url,
                     data = {
@@ -97,6 +98,7 @@ async def ensure_realm(realm_name: str):
     Ensures that the specified Keycloak realm exists and is enabled.
     """
     # First, ensure that a realm with the given name exists
+    LOGGER.info("Creating realm if not exists - %s", realm_name)
     try:
         await kc_client.post("/", json = { "realm": realm_name })
     except httpx.HTTPStatusError as exc:
@@ -111,6 +113,7 @@ async def ensure_realm(realm_name: str):
     realm["sslRequired"] = "external" if settings.keycloak.ssl_required else "none"
     # Patch the realm if needed
     if realm != realm_original:
+        LOGGER.info("Updating realm configuration - %s", realm_name)
         await kc_client.put(f"/{realm_name}", json = realm)
 
 
@@ -118,12 +121,59 @@ async def remove_realm(realm_name: str):
     """
     Ensures that the specified Keycloak realm is removed.
     """
+    LOGGER.info("Deleting realm - %s", realm_name)
     try:
         await kc_client.delete(f"/{realm_name}")
     except httpx.HTTPStatusError as exc:
         # Not found is fine - it means the realm doesn't exist
         if exc.response.status_code != 404:
             raise
+
+
+async def ensure_user_profile_config(realm_name: str):
+    """
+    Ensures that the user profile for the realm is set up correctly.
+
+    In particular, we don't want firstName and lastName to be required.
+    """
+    # The user profile is enabled by default from Keycloak 24.0.0
+    # On older versions, this instead looks for a user with ID "profile", which will never exist
+    response = await kc_client.get(f"/{realm_name}/users/profile")
+    if response.status_code != 200:
+        LOGGER.info("User profile not supported, skipping config - %s", realm_name)
+        return
+    profile = response.json()
+    profile_original = copy.deepcopy(profile)
+    # Update the profile to make username the only required field
+    profile["attributes"] = [
+        { k: v for k, v in attr.items() if k != "required"}
+        for attr in profile["attributes"]
+        # We will add the desired state of the federatedId attribute after
+        if attr["name"] != "federatedId"
+    ]
+    profile["attributes"].append({
+        "name": "federatedId",
+        "displayName": "Federated ID",
+        "validations": {
+            "length": {
+                "max": 255,
+            },
+            "up-username-not-idn-homograph": {},
+        },
+        "annotations": {},
+        "permissions": {
+            "view": [
+                "admin",
+                "user"
+            ],
+            "edit": []
+        },
+        "multivalued": False
+    })
+    # Patch the profile if required
+    if profile != profile_original:
+        LOGGER.info("Updating user profile configuration - %s", realm_name)
+        await kc_client.put(f"/{realm_name}/users/profile", json = profile)
 
 
 async def _ensure_group(realm_name: str, group_name: str):
@@ -142,6 +192,7 @@ async def _ensure_group(realm_name: str, group_name: str):
     try:
         group = next(group for group in response.json() if group["name"] == group_name)
     except StopIteration:
+        LOGGER.info("Creating group '%s' in realm - %s", group_name, realm_name)
         response = await kc_client.post(f"/{realm_name}/groups", json = { "name": group_name })
         # The Keycloak API does not return a representation in the create response,
         # but it does return the URL to get one in the location header
@@ -171,6 +222,11 @@ async def ensure_admins_group(realm_name: str):
                 f"/{realm_name}/groups/{group['id']}/role-mappings/clients/{client_id}/available"
             )
             role_ids = { role["name"]: role["id"] for role in response.json() }
+            LOGGER.info(
+                "Updating role mappings for client '%s' in admins group - %s",
+                client_name,
+                realm_name
+            )
             await kc_client.post(
                 f"/{realm_name}/groups/{group['id']}/role-mappings/clients/{client_id}",
                 json = [{ "id": role_ids[role], "name": role } for role in missing_roles]
@@ -231,11 +287,13 @@ async def ensure_identity_provider(realm: api.Realm, realm_name, dex_client):
     })
     # Update the identity provider in Keycloak if required
     if not existing_idp:
+        LOGGER.info("Creating Azimuth IdP - %s", realm_name)
         await kc_client.post(
             f"/{realm_name}/identity-provider/instances",
             json = next_idp
         )
     elif existing_idp != next_idp:
+        LOGGER.info("Updating Azimuth IdP - %s", realm_name)
         await kc_client.put(idp_url, json = next_idp)
     # Ensure that the mappers are properly configured
     await _ensure_idp_group_mapper(
@@ -269,6 +327,10 @@ async def _ensure_idp_first_login_flow(realm: api.Realm, realm_name: str):
         if exc.response.status_code != 404:
             raise
         # If the executions don't exist, we need to create the flow by copying the source flow
+        LOGGER.info(
+            "Copying flow '%s' for Azimuth IdP - %s",
+            settings.keycloak.source_first_login_flow_alias, realm_name
+        )
         await kc_client.post(
             "/{}/authentication/flows/{}/copy".format(
                 realm_name,
@@ -288,6 +350,7 @@ async def _ensure_idp_first_login_flow(realm: api.Realm, realm_name: str):
     next_execution = copy.deepcopy(existing_execution)
     next_execution["requirement"] = "DISABLED"
     if existing_execution != next_execution:
+        LOGGER.info("Updating flow executions for Azimuth IdP - %s", realm_name)
         await kc_client.put(executions_url, json = next_execution)
     return settings.keycloak.target_first_login_flow_alias
 
@@ -331,8 +394,10 @@ async def _ensure_idp_group_mapper(
     })
     # Update the mapper in Keycloak if required
     if not existing_mapper:
+        LOGGER.info("Creating group mapper for '%s' - %s", group_name, realm_name(realm))
         await kc_client.post(f"{idp_url}/mappers", json = next_mapper)
     elif existing_mapper != next_mapper:
+        LOGGER.info("Updating group mapper for '%s' - %s", group_name, realm_name(realm))
         await kc_client.put(
             f"{idp_url}/mappers/{existing_mapper['id']}",
             json = next_mapper
@@ -362,13 +427,15 @@ async def _ensure_idp_federated_id_mapper(realm: api.Realm, idp_url: str):
     })
     next_mapper.setdefault("config", {}).update({
         "claim": "federated_claims.user_id",
-        "user.attribute": "federated_id",
+        "user.attribute": "federatedId",
         "syncMode": "FORCE",
     })
     # Update the mapper in Keycloak if required
     if not existing_mapper:
+        LOGGER.info("Creating federated ID mapper - %s", realm_name(realm))
         await kc_client.post(f"{idp_url}/mappers", json = next_mapper)
     elif existing_mapper != next_mapper:
+        LOGGER.info("Updating federated ID mapper - %s", realm_name(realm))
         await kc_client.put(
             f"{idp_url}/mappers/{existing_mapper['id']}",
             json = next_mapper
@@ -391,10 +458,12 @@ async def ensure_groups_scope(realm: api.Realm, realm_name: str):
     })
     # Create or update the scope in Keycloak
     if not existing_scope:
+        LOGGER.info("Creating groups scope for OIDC clients - %s", realm_name)
         response = await kc_client.post(f"/{realm_name}/client-scopes", json = scope)
         response = await kc_client.get(response.headers["location"])
         scope = response.json()
     elif scope != existing_scope:
+        LOGGER.info("Updating groups scope for OIDC clients - %s", realm_name)
         await kc_client.put(
             f"/{realm_name}/client-scopes/{scope['id']}",
             json = scope
@@ -403,9 +472,11 @@ async def ensure_groups_scope(realm: api.Realm, realm_name: str):
     # To do this properly, we must first make sure it is not optional
     response = await kc_client.get(f"/{realm_name}/default-optional-client-scopes")
     if any(s["id"] == scope["id"] for s in response.json()):
+        LOGGER.info("Removing groups scope from optional client scopes - %s", realm_name)
         await kc_client.delete(f"/{realm_name}/default-optional-client-scopes/{scope['id']}")
     # This fails with a conflict if the scope is already a default or optional scope,
     # but we know from above that the scope is not optional, so the 409 is OK
+    LOGGER.info("Adding groups scope to default client scopes - %s", realm_name)
     try:
         await kc_client.put(f"/{realm_name}/default-default-client-scopes/{scope['id']}")
     except httpx.HTTPStatusError as exc:
@@ -435,8 +506,10 @@ async def ensure_groups_scope(realm: api.Realm, realm_name: str):
     })
     protocol_mappers_base = f"/{realm_name}/client-scopes/{scope['id']}/protocol-mappers/models"
     if not existing_mapper:
+        LOGGER.info("Create protocol mapper for groups scope - %s", realm_name)
         await kc_client.post(protocol_mappers_base, json = protocol_mapper)
     elif protocol_mapper != existing_mapper:
+        LOGGER.info("Updating protocol mapper for groups scope - %s", realm_name)
         await kc_client.put(
             f"{protocol_mappers_base}/{protocol_mapper['id']}",
             json = protocol_mapper
@@ -463,6 +536,7 @@ async def ensure_platform_group(realm_name: str, platform: api.Platform):
             if group["name"] == platform.metadata.name
         )
     except StopIteration:
+        LOGGER.info("Creating group for platform '%s' - %s", platform.metadata.name, realm_name)
         response = await kc_client.post(
             f"/{realm_name}/groups",
             json = { "name": platform.metadata.name }
@@ -497,6 +571,7 @@ async def remove_platform_group(realm_name: str, platform: api.Platform):
         return
     else:
         # Otherwise, delete the group
+        LOGGER.info("Deleting group for platform '%s' - %s", platform.metadata.name, realm_name)
         await kc_client.delete(f"/{realm_name}/groups/{group['id']}")
 
 
@@ -515,6 +590,12 @@ async def ensure_platform_service_subgroup(
             if subgroup["name"] == service_name
         )
     except StopIteration:
+        LOGGER.info(
+            "Creating subgroup for platform service '%s/%s' - %s",
+            group['name'],
+            service_name,
+            realm_name
+        )
         response = await kc_client.post(
             f"/{realm_name}/groups/{group['id']}/children",
             json = { "name": service_name }
@@ -536,6 +617,12 @@ async def prune_platform_service_subgroups(
         if subgroup["name"] in platform.spec.zenith_services:
             continue
         # Otherwise, delete it
+        LOGGER.info(
+            "Deleting subgroup for platform service '%s/%s' - %s",
+            group['name'],
+            subgroup['name'],
+            realm_name
+        )
         await kc_client.delete(f"/{realm_name}/groups/{subgroup['id']}")
 
 
@@ -576,12 +663,24 @@ async def ensure_platform_service_client(
         "publicClient": False,
     })
     if not existing_client:
+        LOGGER.info(
+            "Creating client for platform service '%s/%s' - %s",
+            platform.metadata.name,
+            service_name,
+            realm_name
+        )
         response = await kc_client.post(f"/{realm_name}/clients", json = next_client)
         # The Keycloak API does not return a representation in the create response,
         # but it does return the URL to get one in the location header
         response = await kc_client.get(response.headers["location"])
         next_client = response.json()
     elif next_client != existing_client:
+        LOGGER.info(
+            "Updating client for platform service '%s/%s' - %s",
+            platform.metadata.name,
+            service_name,
+            realm_name
+        )
         await kc_client.put(
             f"/{realm_name}/clients/{next_client.pop('id')}",
             json = next_client
@@ -617,4 +716,10 @@ async def prune_platform_service_clients(
         if not all and service_name in platform.spec.zenith_services:
             continue
         # If the client is not for a recognised service, delete it
+        LOGGER.info(
+            "Deleting client for platform service '%s/%s' - %s",
+            platform.metadata.name,
+            service_name,
+            realm_name
+        )
         await kc_client.delete(f"/{realm_name}/clients/{client['id']}")

@@ -126,6 +126,46 @@ async def remove_realm(realm_name: str):
             raise
 
 
+async def ensure_user_profile_config(realm_name: str):
+    """
+    Ensures that the user profile for the realm is set up correctly.
+
+    In particular, we don't want firstName and lastName to be required.
+    """
+    response = await kc_client.get(f"/{realm_name}/users/profile")
+    profile = response.json()
+    profile_original = copy.deepcopy(profile)
+    # Update the profile to make username the only required field
+    profile["attributes"] = [
+        { k: v for k, v in attr.items() if k != "required"}
+        for attr in profile["attributes"]
+        # We will add the desired state of the federatedId attribute after
+        if attr["name"] != "federatedId"
+    ]
+    profile["attributes"].append({
+        "name": "federatedId",
+        "displayName": "Federated ID",
+        "validations": {
+            "length": {
+                "max": 255,
+            },
+            "up-username-not-idn-homograph": {},
+        },
+        "annotations": {},
+        "permissions": {
+            "view": [
+                "admin",
+                "user"
+            ],
+            "edit": []
+        },
+        "multivalued": False
+    })
+    # Patch the profile if required
+    if profile != profile_original:
+        await kc_client.put(f"/{realm_name}/users/profile", json = profile)
+
+
 async def _ensure_group(realm_name: str, group_name: str):
     """
     Ensures that the specified group exists in Keycloak.
@@ -362,7 +402,7 @@ async def _ensure_idp_federated_id_mapper(realm: api.Realm, idp_url: str):
     })
     next_mapper.setdefault("config", {}).update({
         "claim": "federated_claims.user_id",
-        "user.attribute": "federated_id",
+        "user.attribute": "federatedId",
         "syncMode": "FORCE",
     })
     # Update the mapper in Keycloak if required

@@ -145,6 +145,8 @@ async def reconcile_realm(instance: api.Realm, **kwargs):
     dex_client = await dex.ensure_realm_instance(ekclient, instance, realm_name)
     # Create the realm
     await keycloak.ensure_realm(realm_name)
+    # Make sure that the profile requirements for the realm are set up correctly
+    await keycloak.ensure_user_profile_config(realm_name)
     # Create and wire up the admins and platform users group
     await keycloak.ensure_admins_group(realm_name)
     await keycloak.ensure_platform_users_group(realm_name)

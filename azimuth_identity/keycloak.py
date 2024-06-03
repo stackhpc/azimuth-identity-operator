@@ -132,7 +132,11 @@ async def ensure_user_profile_config(realm_name: str):
 
     In particular, we don't want firstName and lastName to be required.
     """
+    # The user profile is enabled by default from Keycloak 24.0.0
+    # On older versions, this instead looks for a user with ID "profile", which will never exist
     response = await kc_client.get(f"/{realm_name}/users/profile")
+    if response.status_code != 200:
+        return
     profile = response.json()
     profile_original = copy.deepcopy(profile)
     # Update the profile to make username the only required field

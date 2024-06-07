@@ -60,3 +60,26 @@ The TLS secret name to use for Dex instances.
 {{- required "tls.secretName is required when tls.createCertificate is false" .Values.tls.secretName }}
 {{- end }}
 {{- end }}
+
+{{/*
+Produces the metadata for a CRD.
+*/}}
+{{- define "azimuth-identity-operator.crd.metadata" }}
+metadata:
+  labels: {{ include "azimuth-identity-operator.labels" . | nindent 4 }}
+  {{- if .Values.crds.keep }}
+  annotations:
+    helm.sh/resource-policy: keep
+  {{- end }}
+{{- end }}
+
+{{/*
+Loads a CRD from the specified file and merges in the metadata.
+*/}}
+{{- define "azimuth-identity-operator.crd" }}
+{{- $ctx := index . 0 }}
+{{- $path := index . 1 }}
+{{- $crd := $ctx.Files.Get $path | fromYaml }}
+{{- $metadata := include "azimuth-identity-operator.crd.metadata" $ctx | fromYaml }}
+{{- merge $crd $metadata | toYaml }}
+{{- end }}

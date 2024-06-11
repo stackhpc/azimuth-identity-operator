@@ -65,13 +65,6 @@ jobs:
             chart_repo_jsonpath: DEX_CHART_REPO
             chart_version_jsonpath: DEX_CHART_VERSION
 
-          # The kube-state-metrics chart from the Helm dependencies
-          - key: kube-state-metrics
-            path: ./chart/Chart.yaml
-            chart_name_jsonpath: dependencies[0].name
-            chart_repo_jsonpath: dependencies[0].repository
-            chart_version_jsonpath: dependencies[0].version
-
     name: ${{ matrix.key }}
     steps:
       - name: Checkout

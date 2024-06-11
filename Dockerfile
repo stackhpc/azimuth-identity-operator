@@ -77,12 +77,4 @@ COPY --from=python-builder /venv /venv
 
 USER $APP_UID
 ENTRYPOINT ["tini", "-g", "--"]
-CMD [ \
-    "/venv/bin/kopf", \
-    "run", \
-    "--module", \
-    "azimuth_identity.operator", \
-    "--all-namespaces", \
-    "--liveness", \
-    "http://0.0.0.0:8000/healthz" \
-]
+CMD ["/venv/bin/python", "-m", "azimuth_identity"]
